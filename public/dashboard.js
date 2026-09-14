@@ -136,7 +136,11 @@ function initDashboard() {
   document.getElementById('serverUrlDisplay').value = curOrigin;
   const qrImg = document.getElementById('qrCodeImage');
   if (qrImg) {
-    qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(curOrigin)}`;
+    qrImg.onerror = function() {
+      this.onerror = null;
+      this.src = `https://quickchart.io/qr?text=${encodeURIComponent(curOrigin)}&size=180`;
+    };
+    qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=4&data=${encodeURIComponent(curOrigin)}`;
   }
 
   // Polling automático cada 7 segundos para refresco en tiempo real
