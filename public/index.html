@@ -503,7 +503,7 @@
 
           <div class="config-field" style="margin-bottom: 14px;">
             <label>O ingresar cantidad exacta:</label>
-            <input type="number" id="modalStockExactInput" style="text-align: center; font-size: 18px; font-weight: 700;" min="0">
+            <input type="number" id="modalStockExactInput" style="text-align: center; font-size: 18px; font-weight: 700;" min="0" oninput="document.getElementById('modalStockCurrentDisplay').textContent = this.value || 0">
           </div>
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">

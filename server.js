@@ -876,6 +876,19 @@ app.post('/api/sync/sale', checkAuthToken, (req, res) => {
     }
 
     const itemsTxt = Array.isArray(venta.items) ? venta.items.map(i => `${i.cantidad || i.qty}x ${i.nombre || i.name}`).join(', ') : '';
+    
+    // Descontar inventario exacto en el servidor en tiempo real
+    if (Array.isArray(venta.items)) {
+      venta.items.forEach(it => {
+        const prodId = String(it.id || it.producto_id);
+        const qty = parseStockNumber(it.cantidad || it.qty || 1);
+        const p = db.productos.find(prod => String(prod.id) === prodId);
+        if (p) {
+          p.stock = Math.max(0, parseStockNumber(p.stock) - qty);
+        }
+      });
+    }
+
     const mov = registrarMovimiento(
       'venta',
       `Venta #${venta.id} - ${venta.mesa || 'Caja'}`,
@@ -889,6 +902,7 @@ app.post('/api/sync/sale', checkAuthToken, (req, res) => {
 
     // Notificar instantáneamente a todos los dashboards conectados
     broadcastLiveEvent('sale_created', { venta, movimiento: mov });
+    broadcastLiveEvent('inventory_updated', { products: db.productos });
 
     res.json({ success: true, id: venta.id });
   } catch (err) {
