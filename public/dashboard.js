@@ -1002,9 +1002,23 @@ function renderInventory() {
   }
 }
 
+function parseMoneyNumber(val) {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : Math.round(val);
+  const clean = String(val).replace(/[^0-9]/g, '');
+  return parseInt(clean, 10) || 0;
+}
+
+function parseStockNumber(val) {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : Math.max(0, Math.round(val));
+  const clean = String(val).replace(/[^0-9]/g, '');
+  return Math.max(0, parseInt(clean, 10) || 0);
+}
+
 // Modal de Ajuste de Stock
 function openStockModal(prodId) {
-  const prod = (cachedData.inventory || []).find(p => p.id === Number(prodId) || p.id === prodId);
+  const prod = (cachedData.inventory || []).find(p => String(p.id) === String(prodId));
   if (!prod) return;
 
   activeAdjustProduct = prod;
@@ -1016,7 +1030,7 @@ function openStockModal(prodId) {
 
   if (nameEl) nameEl.textContent = prod.name || prod.nombre;
   if (catEl) catEl.textContent = prod.category || 'Categoría';
-  const curStock = Number(prod.stock) || 0;
+  const curStock = parseStockNumber(prod.stock);
   if (displayEl) displayEl.textContent = curStock;
   if (inputEl) inputEl.value = curStock;
 
@@ -1034,7 +1048,7 @@ function adjustStockDelta(delta) {
   const displayEl = document.getElementById('modalStockCurrentDisplay');
   if (!inputEl) return;
 
-  let val = Number(inputEl.value) || 0;
+  let val = parseStockNumber(inputEl.value);
   val = Math.max(0, val + Number(delta));
   inputEl.value = val;
   if (displayEl) displayEl.textContent = val;
@@ -1044,7 +1058,7 @@ async function saveStockAdjustment() {
   if (!activeAdjustProduct) return;
 
   const inputEl = document.getElementById('modalStockExactInput');
-  const newStock = Math.max(0, Number(inputEl ? inputEl.value : 0));
+  const newStock = parseStockNumber(inputEl ? inputEl.value : 0);
   const prodId = activeAdjustProduct.id;
 
   try {
@@ -1063,10 +1077,10 @@ async function saveStockAdjustment() {
     });
 
     const data = await res.json();
-    if (data.success) {
-      const idx = (cachedData.inventory || []).findIndex(p => p.id === prodId);
+    if (data.success && data.product) {
+      const idx = (cachedData.inventory || []).findIndex(p => String(p.id) === String(prodId));
       if (idx >= 0) {
-        cachedData.inventory[idx].stock = newStock;
+        cachedData.inventory[idx] = data.product;
       }
       closeStockModal();
       renderInventory();
@@ -1102,7 +1116,7 @@ function openNewProductModal() {
 }
 
 function openProductEditModal(prodId) {
-  const prod = (cachedData.inventory || []).find(p => p.id === Number(prodId) || p.id === prodId);
+  const prod = (cachedData.inventory || []).find(p => String(p.id) === String(prodId));
   if (!prod) return;
 
   const modal = document.getElementById('modalProductEdit');
@@ -1118,9 +1132,9 @@ function openProductEditModal(prodId) {
   if (idInput) idInput.value = prod.id;
   if (nameInput) nameInput.value = prod.name || prod.nombre || '';
   if (catInput) catInput.value = (prod.category || 'otros').toLowerCase();
-  if (stockInput) stockInput.value = prod.stock !== undefined ? prod.stock : 0;
-  if (costInput) costInput.value = prod.cost || '';
-  if (priceInput) priceInput.value = prod.price || prod.precio || '';
+  if (stockInput) stockInput.value = parseStockNumber(prod.stock);
+  if (costInput) costInput.value = parseMoneyNumber(prod.cost || prod.costo);
+  if (priceInput) priceInput.value = parseMoneyNumber(prod.price || prod.precio);
 
   if (modal) modal.classList.remove('hidden');
 }
@@ -1141,16 +1155,16 @@ async function saveProductEdit() {
   const prodId = idInput ? idInput.value : '';
   const name = nameInput ? nameInput.value.trim() : '';
   const category = catInput ? catInput.value : 'otros';
-  const stock = Number(stockInput ? stockInput.value : 0) || 0;
-  const cost = Number(costInput ? costInput.value : 0) || 0;
-  const price = Number(priceInput ? priceInput.value : 0) || 0;
+  const stock = parseStockNumber(stockInput ? stockInput.value : 0);
+  const cost = parseMoneyNumber(costInput ? costInput.value : 0);
+  const price = parseMoneyNumber(priceInput ? priceInput.value : 0);
 
   if (!name) {
     alert("Por favor ingresa el nombre del producto.");
     return;
   }
   if (price <= 0) {
-    alert("Por favor ingresa un precio de venta válido.");
+    alert("Por favor ingresa un precio de venta válido (ej: 6000 o 10000).");
     return;
   }
 
@@ -1181,7 +1195,7 @@ async function saveProductEdit() {
       if (isNew) {
         cachedData.inventory.push(data.product);
       } else {
-        const idx = cachedData.inventory.findIndex(p => p.id === Number(prodId) || p.id === prodId);
+        const idx = cachedData.inventory.findIndex(p => String(p.id) === String(prodId));
         if (idx >= 0) cachedData.inventory[idx] = data.product;
       }
       closeProductEditModal();
@@ -1197,10 +1211,10 @@ async function saveProductEdit() {
 
 // Ajuste rápido en un solo clic (+1 / -1)
 async function quickAdjustStock(prodId, delta) {
-  const prod = (cachedData.inventory || []).find(p => p.id === Number(prodId) || p.id === prodId);
+  const prod = (cachedData.inventory || []).find(p => String(p.id) === String(prodId));
   if (!prod) return;
 
-  const curStock = Number(prod.stock) || 0;
+  const curStock = parseStockNumber(prod.stock);
   const newStock = Math.max(0, curStock + delta);
 
   // Optimistic UI Update
@@ -1223,7 +1237,10 @@ async function quickAdjustStock(prodId, delta) {
     });
 
     const data = await res.json();
-    if (!data.success) {
+    if (data.success && data.product) {
+      prod.stock = data.product.stock;
+      renderInventory();
+    } else if (!data.success) {
       prod.stock = curStock; // Rollback
       renderInventory();
       alert("Error al ajustar stock: " + data.error);

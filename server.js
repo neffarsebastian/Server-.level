@@ -178,6 +178,48 @@ function getBusinessDateStr(dateInput = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+// Helpers numéricos y monetarios robustos (evita que '10.000' se interprete como 10 en vez de 10000)
+function parseMoneyNumber(val) {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : Math.round(val);
+  const clean = String(val).replace(/[^0-9]/g, '');
+  return parseInt(clean, 10) || 0;
+}
+
+function parseStockNumber(val) {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : Math.max(0, Math.round(val));
+  const clean = String(val).replace(/[^0-9]/g, '');
+  return Math.max(0, parseInt(clean, 10) || 0);
+}
+
+function normalizeProduct(p) {
+  if (!p) return null;
+  const id = Number(p.id) || p.id;
+  const name = String(p.name || p.nombre || 'Producto').trim();
+  const price = parseMoneyNumber(p.price !== undefined ? p.price : p.precio);
+  const cost = parseMoneyNumber(p.cost !== undefined ? p.cost : p.costo);
+  const stock = parseStockNumber(p.stock);
+  const category = String(p.category || p.categoria || 'otros').toLowerCase().trim();
+  const image = p.image || p.imagen || 'images/default_product.png';
+
+  return {
+    id,
+    name,
+    nombre: name,
+    price,
+    precio: price,
+    cost,
+    costo: cost,
+    stock,
+    category,
+    categoria: category,
+    image,
+    imagen: image,
+    icon: p.icon || 'fa-wine-glass'
+  };
+}
+
 // Helper: Timestamp numérico seguro para ordenamiento
 function parseTimestampOrDate(item) {
   if (!item) return 0;
@@ -714,8 +756,31 @@ app.post('/api/sync/batch', checkAuthToken, (req, res) => {
     if (nombreNegocio) db.info.nombre = nombreNegocio;
 
     if (Array.isArray(productos) && productos.length > 0) {
-      const prodMap = new Map(db.productos.map(p => [p.id, p]));
-      productos.forEach(p => prodMap.set(p.id, p));
+      const prodMap = new Map();
+      db.productos.forEach(p => {
+        const norm = normalizeProduct(p);
+        if (norm) prodMap.set(String(norm.id), norm);
+      });
+
+      productos.forEach(incoming => {
+        const normIncoming = normalizeProduct(incoming);
+        if (!normIncoming) return;
+        const key = String(normIncoming.id);
+        const existing = prodMap.get(key);
+
+        if (existing) {
+          prodMap.set(key, {
+            ...existing,
+            ...normIncoming,
+            stock: (incoming.stock !== undefined && incoming.stock !== null) ? normIncoming.stock : existing.stock,
+            cost: (incoming.cost !== undefined && incoming.cost !== null && incoming.cost !== 0) ? normIncoming.cost : (existing.cost || 0),
+            price: normIncoming.price || existing.price
+          });
+        } else {
+          prodMap.set(key, normIncoming);
+        }
+      });
+
       db.productos = Array.from(prodMap.values());
     }
 
@@ -923,8 +988,30 @@ app.post('/api/sync/tables', checkAuthToken, (req, res) => {
 app.post('/api/sync/inventory', checkAuthToken, (req, res) => {
   try {
     const { products, movement } = req.body;
-    if (Array.isArray(products)) {
-      db.productos = products;
+    if (Array.isArray(products) && products.length > 0) {
+      const prodMap = new Map();
+      db.productos.forEach(p => {
+        const norm = normalizeProduct(p);
+        if (norm) prodMap.set(String(norm.id), norm);
+      });
+      products.forEach(p => {
+        const norm = normalizeProduct(p);
+        if (!norm) return;
+        const key = String(norm.id);
+        const existing = prodMap.get(key);
+        if (existing) {
+          prodMap.set(key, {
+            ...existing,
+            ...norm,
+            stock: (p.stock !== undefined && p.stock !== null) ? norm.stock : existing.stock,
+            cost: (p.cost !== undefined && p.cost !== null && p.cost !== 0) ? norm.cost : existing.cost,
+            price: norm.price || existing.price
+          });
+        } else {
+          prodMap.set(key, norm);
+        }
+      });
+      db.productos = Array.from(prodMap.values());
     }
     let mov = null;
     if (movement) {
@@ -942,7 +1029,7 @@ app.post('/api/sync/inventory', checkAuthToken, (req, res) => {
 
     broadcastLiveEvent('inventory_updated', { products: db.productos, movimiento: mov });
 
-    res.json({ success: true });
+    res.json({ success: true, total: db.productos.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1058,37 +1145,42 @@ app.post('/api/remote/broadcast', checkAuthToken, (req, res) => {
 app.post('/api/remote/update-stock', checkAuthToken, (req, res) => {
   try {
     const { productId, delta, newStock, razon, usuario } = req.body;
-    const prod = db.productos.find(p => p.id === Number(productId) || p.id === productId || String(p.id) === String(productId));
+    const key = String(productId);
+    const prod = db.productos.find(p => String(p.id) === key);
     if (!prod) return res.status(404).json({ error: 'Producto no encontrado' });
 
-    let finalStock = Number(prod.stock) || 0;
-    if (newStock !== undefined) {
-      finalStock = Math.max(0, Number(newStock));
-    } else if (delta !== undefined) {
-      finalStock = Math.max(0, finalStock + Number(delta));
+    const stockAnterior = parseStockNumber(prod.stock);
+    let finalStock = stockAnterior;
+
+    if (newStock !== undefined && newStock !== null) {
+      finalStock = parseStockNumber(newStock);
+    } else if (delta !== undefined && delta !== null) {
+      finalStock = Math.max(0, stockAnterior + parseInt(delta, 10));
     }
 
-    const stockAnterior = prod.stock !== undefined ? prod.stock : 0;
     prod.stock = finalStock;
+    const normalized = normalizeProduct(prod);
+    const idx = db.productos.findIndex(p => String(p.id) === key);
+    if (idx >= 0) db.productos[idx] = normalized;
 
     const historyRecord = {
       id: Date.now(),
-      producto_id: prod.id,
+      producto_id: normalized.id,
       tipo: finalStock >= stockAnterior ? 'add' : 'remove',
       cantidad: Math.abs(finalStock - stockAnterior),
       concepto: razon || `Ajuste remoto por ${usuario || 'Admin Remoto'}`,
       fecha: new Date().toLocaleDateString('es-CO'),
       hora: new Date().toLocaleTimeString('es-CO'),
-      precio_unitario: Number(prod.cost) || Number(prod.price) || 0
+      precio_unitario: normalized.cost || normalized.price || 0
     };
     db.inventario_historial.push(historyRecord);
 
     const mov = registrarMovimiento(
       'inventario',
-      `Ajuste Remoto de Stock: ${prod.name || prod.nombre}`,
+      `Ajuste Remoto de Stock: ${normalized.name}`,
       `De ${stockAnterior} a ${finalStock} unidades | Motivo: ${razon || 'Ajuste desde celular'}`,
       0,
-      { usuario: usuario || 'Admin Remoto', producto_id: prod.id, newStock: finalStock, stockAnterior }
+      { usuario: usuario || 'Admin Remoto', producto_id: normalized.id, newStock: finalStock, stockAnterior }
     );
 
     db.info.ultima_sincronizacion = new Date().toISOString();
@@ -1099,16 +1191,16 @@ app.post('/api/remote/update-stock', checkAuthToken, (req, res) => {
     pendingPosActions.push({
       id: `stock_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
       tipo: 'stock_update',
-      productId: prod.id,
+      productId: normalized.id,
       newStock: finalStock,
       stockAnterior,
-      producto: prod,
+      producto: normalized,
       historyRecord,
-      mensaje: `Stock modificado: ${prod.name || prod.nombre} -> ${finalStock} un.`,
+      mensaje: `Stock modificado: ${normalized.name} -> ${finalStock} un.`,
       emisor: usuario || 'Admin Remoto'
     });
 
-    res.json({ success: true, product: prod });
+    res.json({ success: true, product: normalized });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1118,27 +1210,33 @@ app.post('/api/remote/update-stock', checkAuthToken, (req, res) => {
 app.post('/api/remote/update-product', checkAuthToken, (req, res) => {
   try {
     const { id, name, nombre, price, precio, cost, costo, category, categoria, stock, image, imagen, usuario } = req.body;
-    const prod = db.productos.find(p => p.id === Number(id) || p.id === id || String(p.id) === String(id));
+    const key = String(id);
+    const prod = db.productos.find(p => String(p.id) === key);
     if (!prod) return res.status(404).json({ error: 'Producto no encontrado' });
 
-    if (name || nombre) prod.name = name || nombre;
+    if (name || nombre) prod.name = String(name || nombre).trim();
     if (price !== undefined || precio !== undefined) {
-      prod.price = Number(price !== undefined ? price : precio);
+      prod.price = parseMoneyNumber(price !== undefined ? price : precio);
       prod.precio = prod.price;
     }
     if (cost !== undefined || costo !== undefined) {
-      prod.cost = Number(cost !== undefined ? cost : costo);
+      prod.cost = parseMoneyNumber(cost !== undefined ? cost : costo);
+      prod.costo = prod.cost;
     }
-    if (category || categoria) prod.category = (category || categoria).toLowerCase();
+    if (category || categoria) prod.category = String(category || categoria).toLowerCase().trim();
     if (image || imagen) prod.image = image || imagen;
-    if (stock !== undefined) prod.stock = Math.max(0, Number(stock));
+    if (stock !== undefined && stock !== null) prod.stock = parseStockNumber(stock);
+
+    const normalized = normalizeProduct(prod);
+    const idx = db.productos.findIndex(p => String(p.id) === key);
+    if (idx >= 0) db.productos[idx] = normalized;
 
     const mov = registrarMovimiento(
       'inventario',
-      `Producto Modificado Remotamente: ${prod.name}`,
-      `Precio: $${(Number(prod.price) || 0).toLocaleString('es-CO')} | Costo: $${(Number(prod.cost) || 0).toLocaleString('es-CO')} | Stock: ${prod.stock} un.`,
+      `Producto Modificado Remotamente: ${normalized.name}`,
+      `Precio: $${normalized.price.toLocaleString('es-CO')} | Costo: $${normalized.cost.toLocaleString('es-CO')} | Stock: ${normalized.stock} un.`,
       0,
-      { usuario: usuario || 'Admin Remoto', producto_id: prod.id }
+      { usuario: usuario || 'Admin Remoto', producto_id: normalized.id }
     );
 
     db.info.ultima_sincronizacion = new Date().toISOString();
@@ -1149,13 +1247,13 @@ app.post('/api/remote/update-product', checkAuthToken, (req, res) => {
     pendingPosActions.push({
       id: `prod_upd_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
       tipo: 'product_update',
-      productId: prod.id,
-      product: prod,
-      mensaje: `Producto actualizado: ${prod.name} (Precio: $${(Number(prod.price) || 0).toLocaleString('es-CO')})`,
+      productId: normalized.id,
+      product: normalized,
+      mensaje: `Producto actualizado: ${normalized.name} (Precio: $${normalized.price.toLocaleString('es-CO')})`,
       emisor: usuario || 'Admin Remoto'
     });
 
-    res.json({ success: true, product: prod });
+    res.json({ success: true, product: normalized });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1165,21 +1263,21 @@ app.post('/api/remote/update-product', checkAuthToken, (req, res) => {
 app.post('/api/remote/create-product', checkAuthToken, (req, res) => {
   try {
     const { name, nombre, price, precio, cost, costo, category, categoria, stock, image, imagen, usuario } = req.body;
-    if (!name && !nombre) return res.status(400).json({ error: 'Nombre del producto requerido' });
+    const prodName = String(name || nombre || '').trim();
+    if (!prodName) return res.status(400).json({ error: 'Nombre del producto requerido' });
 
     const maxId = db.productos.reduce((max, p) => Math.max(max, Number(p.id) || 0), 0);
     const newId = maxId + 1;
 
-    const newProd = {
+    const newProd = normalizeProduct({
       id: newId,
-      name: name || nombre,
-      price: Number(price !== undefined ? price : precio) || 0,
-      precio: Number(price !== undefined ? price : precio) || 0,
-      cost: Number(cost !== undefined ? cost : costo) || 0,
-      category: (category || categoria || 'otros').toLowerCase(),
-      stock: Math.max(0, Number(stock) || 0),
+      name: prodName,
+      price: parseMoneyNumber(price !== undefined ? price : precio),
+      cost: parseMoneyNumber(cost !== undefined ? cost : costo),
+      category: (category || categoria || 'otros').toLowerCase().trim(),
+      stock: parseStockNumber(stock),
       image: image || imagen || 'images/default_product.png'
-    };
+    });
 
     db.productos.push(newProd);
 
@@ -1194,7 +1292,7 @@ app.post('/api/remote/create-product', checkAuthToken, (req, res) => {
     db.info.ultima_sincronizacion = new Date().toISOString();
     saveDB();
 
-    broadcastLiveEvent('inventory_updated', { products: db.productos, movimiento: mov });
+    broadcastLiveEvent('inventory_updated', { products: db.productos, movement: mov });
 
     pendingPosActions.push({
       id: `prod_crt_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
