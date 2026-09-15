@@ -272,21 +272,21 @@ app.get('/api/overview', (req, res) => {
   let posOnline = false;
   if (db.pos_status && db.pos_status.lastHeartbeat) {
     const diffSeconds = (nowMs - new Date(db.pos_status.lastHeartbeat).getTime()) / 1000;
-    posOnline = diffSeconds < 50 && !db.pos_status.appClosed;
+    posOnline = diffSeconds < 45 && !db.pos_status.appClosed;
   }
 
-  const isCajaCerrada = !cajaAbierta;
+  const isCajaEfectivamenteAbierta = !!(posOnline && db.pos_status?.cajaAbierta);
   const isProgramaCerrado = !posOnline || db.pos_status?.appClosed;
-  const isBloqueado = isCajaCerrada || isProgramaCerrado;
+  const isBloqueado = isProgramaCerrado || !isCajaEfectivamenteAbierta;
 
-  let estadoTextoPrincipal = 'EN LÍNEA (ACTIVO)';
-  if (isProgramaCerrado && isCajaCerrada) {
+  let estadoTextoPrincipal = 'EN LÍNEA (TURNO ABIERTO)';
+  if (isProgramaCerrado) {
     estadoTextoPrincipal = 'PROGRAMA CERRADO - CAJA BLOQUEADA';
-  } else if (isProgramaCerrado) {
-    estadoTextoPrincipal = 'PROGRAMA CERRADO / DESCONECTADO';
-  } else if (isCajaCerrada) {
-    estadoTextoPrincipal = 'CAJA CERRADA / BLOQUEADA';
+  } else if (!isCajaEfectivamenteAbierta) {
+    estadoTextoPrincipal = 'POS EN LÍNEA - ESPERANDO APERTURA';
   }
+
+  const cajeroEnTurno = isCajaEfectivamenteAbierta ? (db.pos_status?.cajeroActual || ultimaSesion?.cajero || 'Cajero') : (posOnline ? 'Esperando inicio de turno' : 'Sin turno / Terminal cerrada');
 
   res.json({
     kpis: {
@@ -299,17 +299,19 @@ app.get('/api/overview', (req, res) => {
       ticketPromedioHoy: ventasHoy.length > 0 ? Math.round(totalVentasHoy / ventasHoy.length) : 0,
       mesasActivasCount: mesasActivas.length,
       totalEnMesas,
-      cajaAbierta: !!cajaAbierta,
+      cajaAbierta: isCajaEfectivamenteAbierta,
       posOnline: !!posOnline,
       isBloqueado: !!isBloqueado,
       estadoTextoPrincipal,
-      cajeroActual: ultimaSesion ? (ultimaSesion.cajero || ultimaSesion.usuario || 'Activo') : 'Sin turno',
+      cajeroActual: cajeroEnTurno,
       saldoEnCajaCalculado: (Number(ultimaSesion?.montoInicial) || 0) + efectivoHoy - totalGastosHoy
     },
     posStatus: {
       online: !!posOnline,
-      appClosed: !!db.pos_status?.appClosed,
+      appClosed: !!isProgramaCerrado,
       cajaBloqueada: !!isBloqueado,
+      cajaAbierta: isCajaEfectivamenteAbierta,
+      cajeroActual: cajeroEnTurno,
       estadoTexto: estadoTextoPrincipal,
       lastHeartbeat: db.pos_status?.lastHeartbeat || null
     },

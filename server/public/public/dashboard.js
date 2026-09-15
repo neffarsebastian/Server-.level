@@ -197,18 +197,30 @@ function renderOverview(data) {
   const cajaSubtext = document.getElementById('cajaSubtext');
   const syncStatusText = document.getElementById('syncStatusText');
 
-  if (k.cajaAbierta && k.posOnline) {
+  if (k.posOnline && k.cajaAbierta) {
+    // 1. POS ABIERTO Y OPERANDO
     cajaStatusLabel.innerHTML = '<span style="color:#00ff88;"><i class="fa-solid fa-circle-check"></i> ESTADO: TURNO ABIERTO & EN LÍNEA</span>';
     cajeroActiveName.textContent = `Cajero: ${k.cajeroActual || 'Activo'}`;
     cajaCalculatedBalance.textContent = formatMoney(k.saldoEnCajaCalculado);
-    if (cajaSubtext) cajaSubtext.textContent = 'Turno en curso | Saldo estimado en gaveta';
+    if (cajaSubtext) cajaSubtext.textContent = 'Turno en curso | Ventas activas en tiempo real';
     cajaBanner.style.borderColor = 'rgba(0, 255, 136, 0.4)';
     cajaBanner.style.background = 'linear-gradient(135deg, rgba(0, 255, 136, 0.08), rgba(15, 23, 42, 0.9))';
-    if (syncStatusText) syncStatusText.textContent = 'POS Conectado en vivo';
+    cajaBanner.style.boxShadow = '0 0 20px rgba(0, 255, 136, 0.15)';
+    if (syncStatusText) syncStatusText.textContent = 'POS En Línea (Activo)';
+  } else if (k.posOnline && !k.cajaAbierta) {
+    // 2. POS ABIERTO PERO ESPERANDO APERTURA DE CAJA
+    cajaStatusLabel.innerHTML = '<span style="color:#ffb703;"><i class="fa-solid fa-clock"></i> POS EN LÍNEA (ESPERANDO APERTURA)</span>';
+    cajeroActiveName.textContent = 'Sin turno abierto en caja';
+    cajaCalculatedBalance.textContent = formatMoney(k.saldoEnCajaCalculado || 0);
+    if (cajaSubtext) cajaSubtext.innerHTML = '<span style="color:#ffb703;"><i class="fa-solid fa-triangle-exclamation"></i> Terminal POS encendida, pendiente de abrir turno con base inicial.</span>';
+    cajaBanner.style.borderColor = 'rgba(255, 183, 3, 0.5)';
+    cajaBanner.style.background = 'linear-gradient(135deg, rgba(255, 183, 3, 0.1), rgba(15, 23, 42, 0.9))';
+    cajaBanner.style.boxShadow = '0 0 20px rgba(255, 183, 3, 0.2)';
+    if (syncStatusText) syncStatusText.textContent = 'POS En Línea (Esperando Apertura)';
   } else {
-    // PROGRAMA CERRADO / BLOQUEADO
+    // 3. PROGRAMA CERRADO / TERMINAL APAGADA (BLOQUEADO)
     cajaStatusLabel.innerHTML = '<span style="color:#ff3366; font-weight:800; letter-spacing:0.5px;"><i class="fa-solid fa-lock fa-bounce"></i> PROGRAMA CERRADO - CAJA BLOQUEADA</span>';
-    cajeroActiveName.textContent = k.posOnline ? 'Turno Finalizado (Bloqueado)' : 'Terminal Apagada / Fuera de Línea';
+    cajeroActiveName.textContent = 'Terminal Apagada / Fuera de Línea';
     cajaCalculatedBalance.textContent = formatMoney(k.saldoEnCajaCalculado || 0);
     if (cajaSubtext) cajaSubtext.innerHTML = '<span style="color:#f87171;"><i class="fa-solid fa-shield-halved"></i> Terminal física cerrada y bloqueada. Movimientos detenidos.</span>';
     cajaBanner.style.borderColor = 'rgba(255, 51, 102, 0.7)';
