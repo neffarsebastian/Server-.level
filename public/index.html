@@ -18,6 +18,10 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   
   <link rel="stylesheet" href="dashboard.css">
+
+  <!-- jsPDF & AutoTable para Exportación de PDF Profesional -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 
@@ -167,6 +171,19 @@
             </div>
           </div>
 
+          <!-- Utilidad Estimada (Ganancia Bruta & Margen) -->
+          <div class="kpi-card card-utility">
+            <div class="kpi-header">
+              <span class="kpi-title">UTILIDAD ESTIMADA</span>
+              <div class="kpi-icon" style="color: #00f3ff;"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+            </div>
+            <div class="kpi-value cyan-glow" id="kpiUtility">$0</div>
+            <div class="kpi-footer">
+              <span id="kpiMarginPct">Margen: 0%</span>
+              <span class="kpi-trend positive" id="kpiNetUtilityTrend"><i class="fa-solid fa-chart-pie"></i> Ventas - Costos</span>
+            </div>
+          </div>
+
           <!-- Ganancia Neta -->
           <div class="kpi-card card-profit">
             <div class="kpi-header">
@@ -295,8 +312,9 @@
             <h2 class="section-title"><i class="fa-solid fa-timeline text-cyan"></i> Registro Lógico de Movimientos</h2>
             <p class="section-subtitle">Auditoría cronológica completa de ventas, aperturas, cierres, gastos y ajustes de inventario</p>
           </div>
-          <div class="export-actions">
+          <div class="export-actions" style="display: flex; gap: 8px;">
             <button class="action-btn btn-export" onclick="exportMovementsCSV()"><i class="fa-solid fa-file-csv"></i> Exportar CSV</button>
+            <button class="action-btn btn-export-pdf" onclick="exportMovementsPDF()" style="background: linear-gradient(135deg, rgba(0, 243, 255, 0.2), rgba(0, 119, 255, 0.2)); border: 1px solid #00f3ff; color: #00f3ff;"><i class="fa-solid fa-file-pdf"></i> Descargar PDF</button>
           </div>
         </div>
 

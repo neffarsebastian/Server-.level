@@ -463,8 +463,18 @@ app.get('/api/overview', (req, res) => {
   let totalGastosHoy = 0;
   let saldoCalculado = 0;
   let totalTransaccionesHoy = 0;
+  let totalCostoVentasHoy = 0;
   const ventasPorHora = Array(24).fill(0);
   const conteoProductos = {};
+
+  // Mapa rápido de costos de catálogo
+  const prodCostMap = new Map();
+  db.productos.forEach(p => {
+    const c = parseMoneyNumber(p.cost !== undefined ? p.cost : p.costo);
+    prodCostMap.set(String(p.id), c);
+    if (p.name) prodCostMap.set(String(p.name).toLowerCase().trim(), c);
+    if (p.nombre) prodCostMap.set(String(p.nombre).toLowerCase().trim(), c);
+  });
 
   // Si hay estado en vivo transmitido desde la caja física
   if (liveState && liveState.abierta) {
@@ -476,7 +486,7 @@ app.get('/api/overview', (req, res) => {
       ? Number(liveState.saldoActual) 
       : Math.max(0, (Number(liveState.montoInicial) || 0) + efectivoHoy - totalGastosHoy);
     
-    const txs = Array.isArray(liveState.transacciones) ? liveState.transacciones : ventasHoy;
+    const txs = Array.isArray(liveState.transacciones) && liveState.transacciones.length > 0 ? liveState.transacciones : ventasHoy;
     totalTransaccionesHoy = txs.length;
 
     txs.forEach(v => {
@@ -492,6 +502,14 @@ app.get('/api/overview', (req, res) => {
           const nom = it.nombre || it.name || 'Producto';
           const qty = Number(it.cantidad || it.qty) || 1;
           const sub = Number(it.subtotal) || (Number(it.precioUnitario || it.price || 0) * qty);
+
+          let unitCost = Number(it.cost !== undefined ? it.cost : it.costo);
+          if (isNaN(unitCost) || unitCost <= 0) {
+            const pId = String(it.id || it.producto_id || '');
+            unitCost = prodCostMap.get(pId) || prodCostMap.get(String(nom).toLowerCase().trim()) || 0;
+          }
+          totalCostoVentasHoy += (unitCost * qty);
+
           if (!conteoProductos[nom]) {
             conteoProductos[nom] = { nombre: nom, cantidad: 0, total: 0 };
           }
@@ -530,6 +548,14 @@ app.get('/api/overview', (req, res) => {
           const nom = it.nombre || it.name || 'Producto';
           const qty = Number(it.cantidad || it.qty) || 1;
           const sub = Number(it.subtotal) || (Number(it.precioUnitario || it.price || 0) * qty);
+
+          let unitCost = Number(it.cost !== undefined ? it.cost : it.costo);
+          if (isNaN(unitCost) || unitCost <= 0) {
+            const pId = String(it.id || it.producto_id || '');
+            unitCost = prodCostMap.get(pId) || prodCostMap.get(String(nom).toLowerCase().trim()) || 0;
+          }
+          totalCostoVentasHoy += (unitCost * qty);
+
           if (!conteoProductos[nom]) {
             conteoProductos[nom] = { nombre: nom, cantidad: 0, total: 0 };
           }
@@ -545,6 +571,10 @@ app.get('/api/overview', (req, res) => {
     saldoCalculado = Math.max(0, baseInicial + efectivoHoy - totalGastosHoy);
     totalTransaccionesHoy = ventasHoy.length;
   }
+
+  const utilidadBrutaHoy = Math.max(0, totalVentasHoy - totalCostoVentasHoy);
+  const utilidadNetaHoy = totalVentasHoy - totalCostoVentasHoy - totalGastosHoy;
+  const margenUtilidadPct = totalVentasHoy > 0 ? Math.round((utilidadBrutaHoy / totalVentasHoy) * 100) : 0;
 
   const mesasActivas = db.ventas_pendientes || [];
   const totalEnMesas = mesasActivas.reduce((acc, m) => {
@@ -594,6 +624,13 @@ app.get('/api/overview', (req, res) => {
       balanceNetoHoy: totalVentasHoy - totalGastosHoy,
       gananciaNetaHoy: totalVentasHoy - totalGastosHoy,
       netProfit: totalVentasHoy - totalGastosHoy,
+      totalCostoHoy: totalCostoVentasHoy,
+      totalCostoVentasHoy,
+      utilidadBrutaHoy,
+      utilidadNetaHoy,
+      utilidadEstimada: utilidadBrutaHoy,
+      margenUtilidadPct,
+      margenPct: margenUtilidadPct,
       totalTransaccionesHoy,
       cantidadVentasHoy: totalTransaccionesHoy,
       txCount: totalTransaccionesHoy,

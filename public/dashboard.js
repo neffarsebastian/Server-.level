@@ -472,6 +472,19 @@ function renderOverview(data) {
   animateCounter('kpiExpenses', expensesVal, true);
   animateCounter('kpiActiveTables', activeTablesVal, false);
 
+  // Utilidad & Margen Estimado
+  const utilityVal = k.utilidadBrutaHoy !== undefined ? k.utilidadBrutaHoy : (k.utilidadEstimada || (totalSalesVal - (k.totalCostoHoy || 0)));
+  const marginPctVal = k.margenUtilidadPct !== undefined ? k.margenUtilidadPct : (totalSalesVal > 0 ? Math.round((utilityVal / totalSalesVal) * 100) : 0);
+  animateCounter('kpiUtility', utilityVal, true);
+
+  const kpiMarginPct = document.getElementById('kpiMarginPct');
+  if (kpiMarginPct) kpiMarginPct.textContent = `Margen: ${marginPctVal}%`;
+
+  const kpiNetUtilityTrend = document.getElementById('kpiNetUtilityTrend');
+  if (kpiNetUtilityTrend && k.totalCostoHoy) {
+    kpiNetUtilityTrend.innerHTML = `<i class="fa-solid fa-tag"></i> Costo: ${formatMoney(k.totalCostoHoy)}`;
+  }
+
   const kpiTxCount = document.getElementById('kpiTxCount');
   if (kpiTxCount) kpiTxCount.textContent = `${txCountVal} transacciones hoy`;
 
@@ -499,7 +512,6 @@ function renderHourlyChart(hourlyArray) {
   if (!container) return;
 
   const maxVal = Math.max(...hourlyArray, 10000);
-  // Mostrar desde las 10 AM hasta las 3 AM (rango típico gastrobar) o las 24h
   let html = '';
   for (let h = 0; h < 24; h++) {
     const val = hourlyArray[h] || 0;
@@ -577,7 +589,7 @@ function renderTables(tables) {
 
   container.innerHTML = list.map(t => {
     const items = Array.isArray(t.items) ? t.items : [];
-    const total = Number(t.total) || items.reduce((s, i) => s + ((Number(i.price) || 0) * (Number(i.qty) || 1)), 0);
+    const total = Number(t.total) || items.reduce((s, i) => s + ((Number(i.price || i.precio) || 0) * (Number(i.qty || i.cantidad) || 1)), 0);
     const mesaNombre = t.mesa || t.name || 'Mesa';
     const horaApertura = t.hora || (t.createdAt ? new Date(t.createdAt).toLocaleTimeString('es-CO') : '');
 
@@ -600,9 +612,9 @@ function renderTables(tables) {
           `).join('')}
         </div>
 
-        <div class="table-card-footer">
-          <span style="font-size: 11px; color: var(--text-muted);">${items.length} productos</span>
-          <div class="table-total-amount">${formatMoney(total)}</div>
+        <div class="table-footer">
+          <span style="font-size: 12px; color: var(--text-secondary);">Total Consumo:</span>
+          <span class="table-total">${formatMoney(total)}</span>
         </div>
       </div>
     `;
@@ -610,21 +622,21 @@ function renderTables(tables) {
 }
 
 // ==========================================
-// 6. AUDITORÍA: LÍNEA DE TIEMPO DE MOVIMIENTOS
+// 6. RENDERIZADO: AUDITORÍA Y TIMELINE
 // ==========================================
 
+let movementSearchTimer = null;
 function debounceMovementSearch() {
-  clearTimeout(searchDebounceTimer);
-  searchDebounceTimer = setTimeout(loadMovements, 300);
+  clearTimeout(movementSearchTimer);
+  movementSearchTimer = setTimeout(loadMovements, 300);
 }
 
 async function loadMovements() {
-  const type = document.getElementById('filterMovementType')?.value || 'todos';
-  const search = document.getElementById('filterMovementSearch')?.value || '';
   const container = document.getElementById('timelineContainer');
   if (!container) return;
 
-  container.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i> Cargando movimientos...</div>';
+  const type = document.getElementById('filterMovementType')?.value || 'todos';
+  const search = document.getElementById('filterMovementSearch')?.value || '';
 
   try {
     const url = `/api/movements?tipo=${encodeURIComponent(type)}&search=${encodeURIComponent(search)}&limit=100`;
@@ -644,35 +656,55 @@ async function loadMovements() {
 }
 
 function createTimelineItemHTML(m) {
+  const tipo = (m.tipo || 'aviso').toLowerCase();
   const iconClass = {
-    venta: 'fa-solid fa-receipt',
-    gasto: 'fa-solid fa-arrow-down-wide-short',
-    ingreso: 'fa-solid fa-arrow-up-wide-short',
-    apertura: 'fa-solid fa-unlock-keyhole',
+    venta: 'fa-solid fa-cart-shopping',
+    gasto: 'fa-solid fa-arrow-down',
+    ingreso: 'fa-solid fa-arrow-up',
+    apertura: 'fa-solid fa-lock-open',
     cierre: 'fa-solid fa-lock',
-    inventario: 'fa-solid fa-boxes-stacked'
-  }[m.tipo] || 'fa-solid fa-circle-dot';
+    inventario: 'fa-solid fa-boxes-stacked',
+    aviso: 'fa-solid fa-satellite-dish'
+  }[tipo] || 'fa-solid fa-circle-dot';
+
+  const tipoLabel = {
+    venta: 'Venta Registrada',
+    gasto: 'Gasto / Salida',
+    ingreso: 'Ingreso Extra',
+    apertura: 'Apertura de Caja',
+    cierre: 'Cierre de Turno',
+    inventario: 'Ajuste Inventario',
+    aviso: 'Mensaje Remoto'
+  }[tipo] || tipo.toUpperCase();
 
   const amountFormatted = m.monto ? formatMoney(m.monto) : '';
 
+  // Pills de metadatos profesionales
+  const userPill = `<span class="timeline-pill user-pill"><i class="fa-solid fa-user-shield"></i> ${escapeHtml(m.usuario || 'Sistema')}</span>`;
+  const mesaPill = m.mesa ? `<span class="timeline-pill mesa-pill"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(m.mesa)}</span>` : '';
+  const metodoPill = m.metodoPago ? `<span class="timeline-pill pay-pill"><i class="fa-solid fa-credit-card"></i> ${escapeHtml(m.metodoPago)}</span>` : '';
+
   return `
     <div class="timeline-item">
-      <div class="timeline-icon type-${m.tipo}">
+      <div class="timeline-icon type-${tipo}">
         <i class="${iconClass}"></i>
       </div>
       <div class="timeline-body">
         <div class="timeline-header-row">
-          <div class="timeline-title">${escapeHtml(m.titulo || 'Movimiento')}</div>
-          <div class="timeline-time">${escapeHtml(m.hora || '')} - ${escapeHtml(m.fecha || '')}</div>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <span class="badge-tipo badge-${tipo}"><i class="${iconClass}"></i> ${tipoLabel}</span>
+            <div class="timeline-title">${escapeHtml(m.titulo || 'Movimiento')}</div>
+          </div>
+          <div class="timeline-time"><i class="fa-regular fa-clock"></i> ${escapeHtml(m.hora || '')} <span style="opacity:0.6;">(${escapeHtml(m.fecha || '')})</span></div>
         </div>
         <div class="timeline-detail">${escapeHtml(m.detalle || '')}</div>
         <div class="timeline-meta">
-          <span><i class="fa-solid fa-user"></i> ${escapeHtml(m.usuario || 'Sistema')}</span>
-          ${m.mesa ? `<span><i class="fa-solid fa-tag"></i> ${escapeHtml(m.mesa)}</span>` : ''}
-          ${m.metodoPago ? `<span><i class="fa-solid fa-credit-card"></i> ${escapeHtml(m.metodoPago)}</span>` : ''}
+          ${userPill}
+          ${mesaPill}
+          ${metodoPill}
         </div>
       </div>
-      ${amountFormatted ? `<div class="timeline-amount ${m.tipo === 'gasto' ? 'text-danger' : 'text-success'}">${m.tipo === 'gasto' ? '-' : '+'}${amountFormatted}</div>` : ''}
+      ${amountFormatted ? `<div class="timeline-amount ${tipo === 'gasto' ? 'text-danger' : 'text-success'}">${tipo === 'gasto' ? '-' : '+'}${amountFormatted}</div>` : ''}
     </div>
   `;
 }
@@ -707,6 +739,210 @@ function exportMovementsCSV() {
   a.download = `Auditoria_Movimientos_LEVEL_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// Exportar Reporte Ejecutivo Oficial en PDF
+function exportMovementsPDF() {
+  const movs = cachedData.movements || [];
+  if (movs.length === 0) {
+    alert("No hay movimientos registrados para exportar.");
+    return;
+  }
+
+  const k = cachedData.metrics?.kpis || {};
+  const fechaHoy = new Date().toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' });
+  const horaHoy = new Date().toLocaleTimeString('es-CO');
+
+  // Si jsPDF está disponible en el navegador
+  if (window.jspdf && window.jspdf.jsPDF) {
+    try {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+      // 1. Cabecera Ejecutiva Oscura y Dorada
+      doc.setFillColor(10, 17, 40); // Navy Dark
+      doc.rect(0, 0, 210, 38, 'F');
+
+      // Línea de Acento Cian / Oro
+      doc.setFillColor(0, 243, 255);
+      doc.rect(0, 38, 210, 1.5, 'F');
+
+      // Título
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(20);
+      doc.setTextColor(255, 215, 0); // Gold
+      doc.text("LEVEL GASTROBAR", 14, 16);
+
+      doc.setFontSize(10);
+      doc.setTextColor(255, 255, 255);
+      doc.text("REPORTE EJECUTIVO DE AUDITORÍA Y REGISTRO DE MOVIMIENTOS", 14, 23);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Fecha de emisión: ${fechaHoy} - ${horaHoy} | Generado por: Administrador`, 14, 30);
+      doc.text(`Estado del POS: ${k.posOnline ? (k.cajaAbierta ? 'TURNO EN CURSO' : 'POS EN LÍNEA') : 'DESCONECTADO'} | Cajero: ${k.cajeroActual || 'N/A'}`, 14, 35);
+
+      // 2. Resumen de Métricas Financieras (Cajas KPI en el PDF)
+      const startY = 46;
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(14, startY, 182, 22, 2, 2, 'F');
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(14, startY, 182, 22, 2, 2, 'S');
+
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text("VENTAS TOTALES", 20, startY + 6);
+      doc.text("UTILIDAD ESTIMADA", 65, startY + 6);
+      doc.text("GASTOS TOTALES", 115, startY + 6);
+      doc.text("BALANCE NETO", 155, startY + 6);
+
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(16, 185, 129); // Verde
+      doc.text(formatMoney(k.totalVentasHoy || 0), 20, startY + 14);
+
+      doc.setTextColor(6, 182, 212); // Cian
+      const utilTxt = `${formatMoney(k.utilidadBrutaHoy || 0)} (${k.margenUtilidadPct || 0}%)`;
+      doc.text(utilTxt, 65, startY + 14);
+
+      doc.setTextColor(239, 68, 68); // Rojo
+      doc.text(formatMoney(k.totalGastosHoy || 0), 115, startY + 14);
+
+      doc.setTextColor(15, 23, 42); // Navy
+      doc.text(formatMoney(k.balanceNetoHoy || 0), 155, startY + 14);
+
+      // 3. Tabla de Movimientos
+      const tableData = movs.map((m, idx) => [
+        idx + 1,
+        `${m.hora || ''}\n${m.fecha || ''}`,
+        (m.tipo || '').toUpperCase(),
+        `${m.titulo || ''}\n${m.detalle || ''}`,
+        m.usuario || 'Sistema',
+        m.mesa ? `Mesa: ${m.mesa}` : (m.metodoPago || '-'),
+        m.monto ? (m.tipo === 'gasto' ? `-${formatMoney(m.monto)}` : `+${formatMoney(m.monto)}`) : '-'
+      ]);
+
+      doc.autoTable({
+        startY: startY + 28,
+        head: [['#', 'Hora/Fecha', 'Tipo', 'Detalle del Movimiento', 'Usuario', 'Ubicación / Pago', 'Monto ($)']],
+        body: tableData,
+        theme: 'striped',
+        styles: {
+          fontSize: 7.5,
+          cellPadding: 2.5,
+          overflow: 'linebreak'
+        },
+        headStyles: {
+          fillColor: [10, 17, 40],
+          textColor: [0, 243, 255],
+          fontStyle: 'bold',
+          halign: 'left'
+        },
+        columnStyles: {
+          0: { cellWidth: 8, halign: 'center' },
+          1: { cellWidth: 24, fontSize: 7 },
+          2: { cellWidth: 20, fontStyle: 'bold' },
+          3: { cellWidth: 70 },
+          4: { cellWidth: 22 },
+          5: { cellWidth: 20 },
+          6: { cellWidth: 18, halign: 'right', fontStyle: 'bold' }
+        },
+        alternateRowStyles: {
+          fillColor: [248, 250, 252]
+        },
+        didDrawPage: (data) => {
+          // Pie de Página en cada hoja
+          const pageCount = doc.internal.getNumberOfPages();
+          doc.setFontSize(7.5);
+          doc.setTextColor(148, 163, 184);
+          doc.text(`LEVEL Gastrobar POS System • Documento Confidencial • Página ${data.pageNumber} de ${pageCount}`, 14, 290);
+        }
+      });
+
+      doc.save(`Auditoria_Oficial_LEVEL_${new Date().toISOString().slice(0, 10)}.pdf`);
+      showLiveNotification('📄 PDF Generado', 'Reporte oficial de auditoría descargado exitosamente');
+      return;
+    } catch (e) {
+      console.warn("Fallo en jsPDF, utilizando vista de impresión:", e);
+    }
+  }
+
+  // Fallback: Impresión directa profesional con HTML si jsPDF no estuviera listo
+  const printWin = window.open('', '_blank');
+  if (!printWin) {
+    alert("Por favor habilita las ventanas emergentes para generar el PDF.");
+    return;
+  }
+
+  const tableRows = movs.map((m, i) => `
+    <tr>
+      <td style="text-align:center;">${i+1}</td>
+      <td>${escapeHtml(m.hora || '')} ${escapeHtml(m.fecha || '')}</td>
+      <td><strong>${escapeHtml((m.tipo || '').toUpperCase())}</strong></td>
+      <td><strong>${escapeHtml(m.titulo || '')}</strong><br><small style="color:#666;">${escapeHtml(m.detalle || '')}</small></td>
+      <td>${escapeHtml(m.usuario || 'Sistema')}</td>
+      <td>${escapeHtml(m.mesa || m.metodoPago || '-')}</td>
+      <td style="text-align:right; font-weight:bold; color:${m.tipo === 'gasto' ? '#dc2626' : '#16a34a'};">${m.monto ? (m.tipo === 'gasto' ? '-' : '+') + formatMoney(m.monto) : '-'}</td>
+    </tr>
+  `).join('');
+
+  printWin.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Auditoría LEVEL Gastrobar</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 25px; color: #1e293b; }
+        .header { border-bottom: 3px solid #00f3ff; padding-bottom: 12px; margin-bottom: 20px; display:flex; justify-content:space-between; align-items:flex-end; }
+        h1 { margin: 0; color: #0a1128; font-size: 24px; }
+        table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 15px; }
+        th { background: #0a1128; color: #00f3ff; padding: 8px; text-align: left; }
+        td { padding: 8px; border-bottom: 1px solid #e2e8f0; }
+        .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 15px; }
+        .kpi-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px; }
+        .kpi-title { font-size: 10px; color: #64748b; font-weight: bold; }
+        .kpi-val { font-size: 16px; font-weight: bold; margin-top: 4px; }
+        @media print { body { padding: 0; } button { display: none; } }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div>
+          <h1>LEVEL GASTROBAR</h1>
+          <p style="margin:4px 0 0 0; font-size:12px; color:#64748b;">Reporte Oficial de Auditoría y Movimientos</p>
+        </div>
+        <div style="text-align:right; font-size:11px; color:#64748b;">
+          Emisión: ${fechaHoy} ${horaHoy}
+        </div>
+      </div>
+      <div class="kpis">
+        <div class="kpi-box"><div class="kpi-title">VENTAS HOY</div><div class="kpi-val" style="color:#16a34a;">${formatMoney(k.totalVentasHoy || 0)}</div></div>
+        <div class="kpi-box"><div class="kpi-title">UTILIDAD ESTIMADA</div><div class="kpi-val" style="color:#0284c7;">${formatMoney(k.utilidadBrutaHoy || 0)} (${k.margenUtilidadPct || 0}%)</div></div>
+        <div class="kpi-box"><div class="kpi-title">GASTOS HOY</div><div class="kpi-val" style="color:#dc2626;">${formatMoney(k.totalGastosHoy || 0)}</div></div>
+        <div class="kpi-box"><div class="kpi-title">BALANCE NETO</div><div class="kpi-val" style="color:#0a1128;">${formatMoney(k.balanceNetoHoy || 0)}</div></div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Hora/Fecha</th>
+            <th>Tipo</th>
+            <th>Detalle</th>
+            <th>Usuario</th>
+            <th>Mesa / Pago</th>
+            <th style="text-align:right;">Monto</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+      <script>window.onload = function() { window.print(); };</script>
+    </body>
+    </html>
+  `);
+  printWin.document.close();
 }
 
 // ==========================================

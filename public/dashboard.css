@@ -881,10 +881,73 @@ body {
 
 .timeline-meta {
   display: flex;
-  gap: 12px;
-  margin-top: 6px;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
   font-size: 11px;
-  color: var(--text-muted);
+}
+
+.timeline-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+}
+
+.timeline-pill.user-pill {
+  border-color: rgba(0, 243, 255, 0.25);
+  color: #00f3ff;
+  background: rgba(0, 243, 255, 0.08);
+}
+
+.timeline-pill.mesa-pill {
+  border-color: rgba(255, 215, 0, 0.25);
+  color: #ffd700;
+  background: rgba(255, 215, 0, 0.08);
+}
+
+.timeline-pill.pay-pill {
+  border-color: rgba(0, 255, 136, 0.25);
+  color: #00ff88;
+  background: rgba(0, 255, 136, 0.08);
+  text-transform: capitalize;
+}
+
+.badge-tipo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.badge-tipo.badge-venta { background: rgba(0, 255, 136, 0.2); color: #00ff88; border: 1px solid rgba(0, 255, 136, 0.4); }
+.badge-tipo.badge-gasto { background: rgba(255, 51, 102, 0.2); color: #ff3366; border: 1px solid rgba(255, 51, 102, 0.4); }
+.badge-tipo.badge-ingreso { background: rgba(255, 215, 0, 0.2); color: #ffd700; border: 1px solid rgba(255, 215, 0, 0.4); }
+.badge-tipo.badge-apertura { background: rgba(0, 243, 255, 0.2); color: #00f3ff; border: 1px solid rgba(0, 243, 255, 0.4); }
+.badge-tipo.badge-cierre { background: rgba(168, 85, 247, 0.2); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.4); }
+.badge-tipo.badge-inventario { background: rgba(255, 140, 0, 0.2); color: #ff8c00; border: 1px solid rgba(255, 140, 0, 0.4); }
+.badge-tipo.badge-aviso { background: rgba(0, 150, 255, 0.2); color: #0096ff; border: 1px solid rgba(0, 150, 255, 0.4); }
+
+.card-utility {
+  border-color: rgba(0, 243, 255, 0.3) !important;
+  background: linear-gradient(145deg, rgba(0, 243, 255, 0.05) 0%, rgba(13, 20, 36, 0.95) 100%) !important;
+}
+
+.btn-export-pdf:hover {
+  background: linear-gradient(135deg, rgba(0, 243, 255, 0.35), rgba(0, 119, 255, 0.35)) !important;
+  box-shadow: 0 0 15px rgba(0, 243, 255, 0.4);
+  transform: translateY(-1px);
 }
 
 .timeline-amount {
