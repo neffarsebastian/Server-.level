@@ -613,8 +613,46 @@ app.post('/api/auth/login', (req, res) => {
   }
 });
 
+// Cola de acciones y avisos remotos para la caja física
+let pendingPosActions = [];
+
+app.post('/api/remote/broadcast', checkAuthToken, (req, res) => {
+  try {
+    const { mensaje, tipo, emisor } = req.body;
+    if (!mensaje) return res.status(400).json({ error: 'Mensaje requerido' });
+
+    const action = {
+      id: `act_${Date.now()}`,
+      tipo: tipo || 'aviso',
+      mensaje,
+      emisor: emisor || 'Administrador (Remoto)',
+      timestamp: new Date().toISOString()
+    };
+
+    pendingPosActions.push(action);
+    registrarMovimiento(
+      'aviso',
+      `Mensaje Remoto Enviado a Caja`,
+      mensaje,
+      0,
+      { usuario: emisor || 'Admin Remoto' }
+    );
+
+    res.json({ success: true, action });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/remote/pending-actions', checkAuthToken, (req, res) => {
+  const actions = [...pendingPosActions];
+  pendingPosActions = []; // Consumir acciones
+  res.json({ success: true, actions });
+});
+
 // Servir archivos estáticos del Dashboard Web
 app.use(express.static(path.join(__dirname, 'public')));
+
 
 // Fallback SPA para cualquier ruta no-API
 app.get('*', (req, res) => {
