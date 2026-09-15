@@ -769,10 +769,17 @@ app.post('/api/sync/batch', checkAuthToken, (req, res) => {
         const existing = prodMap.get(key);
 
         if (existing) {
+          let mergedStock = existing.stock;
+          if (incoming.stock !== undefined && incoming.stock !== null) {
+            if (normIncoming.stock > 0 || existing.stock === 0) {
+              mergedStock = normIncoming.stock;
+            }
+          }
+
           prodMap.set(key, {
             ...existing,
             ...normIncoming,
-            stock: (incoming.stock !== undefined && incoming.stock !== null) ? normIncoming.stock : existing.stock,
+            stock: mergedStock,
             cost: (incoming.cost !== undefined && incoming.cost !== null && incoming.cost !== 0) ? normIncoming.cost : (existing.cost || 0),
             price: normIncoming.price || existing.price
           });
