@@ -14,6 +14,11 @@ let cachedData = {
 let pollInterval = null;
 let searchDebounceTimer = null;
 
+// Estados de Inventario
+let currentInventoryFilter = 'todos';
+let currentInventoryView = 'cards';
+let activeAdjustProduct = null;
+
 // ==========================================
 // 1. AUTENTICACIÓN POR PIN
 // ==========================================
@@ -598,7 +603,7 @@ async function loadSales() {
 }
 
 // ==========================================
-// 8. INVENTARIO EN LA NUBE
+// 8. INVENTARIO & STOCK EN LA NUBE (PRO)
 // ==========================================
 
 async function loadInventory() {
@@ -607,11 +612,15 @@ async function loadInventory() {
     const data = await res.json();
     cachedData.inventory = data.products || [];
 
-    // Llenar categorías
+    // Llenar selector de categorías
     const catSelect = document.getElementById('inventoryCategoryFilter');
     if (catSelect) {
       const cats = Array.from(new Set(cachedData.inventory.map(p => p.category).filter(Boolean)));
+      const curVal = catSelect.value;
       catSelect.innerHTML = '<option value="todas">Todas las categorías</option>' + cats.map(c => `<option value="${c}">${c.toUpperCase()}</option>`).join('');
+      if (curVal && cats.includes(curVal)) {
+        catSelect.value = curVal;
+      }
     }
 
     renderInventory();
@@ -620,45 +629,346 @@ async function loadInventory() {
   }
 }
 
+function setInventoryQuickFilter(filter, btnElement) {
+  currentInventoryFilter = filter;
+  document.querySelectorAll('.btn-quick-filter').forEach(btn => btn.classList.remove('active'));
+  if (btnElement) {
+    btnElement.classList.add('active');
+  }
+  renderInventory();
+}
+
+function setInventoryViewMode(mode) {
+  currentInventoryView = mode;
+  const btnCards = document.getElementById('btnViewCards');
+  const btnTable = document.getElementById('btnViewTable');
+  const cardsGrid = document.getElementById('inventoryCardsGrid');
+  const tableView = document.getElementById('inventoryTableView');
+
+  if (mode === 'cards') {
+    if (btnCards) btnCards.classList.add('active');
+    if (btnTable) btnTable.classList.remove('active');
+    if (cardsGrid) cardsGrid.classList.remove('hidden');
+    if (tableView) tableView.classList.add('hidden');
+  } else {
+    if (btnTable) btnTable.classList.add('active');
+    if (btnCards) btnCards.classList.remove('active');
+    if (tableView) tableView.classList.remove('hidden');
+    if (cardsGrid) cardsGrid.classList.add('hidden');
+  }
+
+  renderInventory();
+}
+
 function renderInventory() {
-  const tbody = document.getElementById('inventoryTableBody');
-  const search = document.getElementById('inventorySearchInput')?.value.toLowerCase() || '';
-  const category = document.getElementById('inventoryCategoryFilter')?.value || 'todas';
+  const allProducts = cachedData.inventory || [];
+  const search = document.getElementById('inventorySearchInput')?.value.toLowerCase().trim() || '';
+  const categorySelect = document.getElementById('inventoryCategoryFilter')?.value || 'todas';
+
+  // 1. Calcular KPIs Globales de Inventario
   const totalCountEl = document.getElementById('invTotalCount');
-  if (!tbody) return;
+  const totalValueEl = document.getElementById('invTotalValue');
+  const lowCountEl = document.getElementById('invLowCount');
+  const emptyCountEl = document.getElementById('invEmptyCount');
 
-  let list = cachedData.inventory || [];
-  if (category !== 'todas') {
-    list = list.filter(p => p.category === category);
+  let totalValue = 0;
+  let lowCount = 0;
+  let emptyCount = 0;
+
+  allProducts.forEach(p => {
+    const stock = typeof p.stock === 'number' ? p.stock : Number(p.stock) || 0;
+    const price = Number(p.price || p.precio) || 0;
+    totalValue += (stock * price);
+    if (stock <= 0) emptyCount++;
+    else if (stock <= 5) lowCount++;
+  });
+
+  if (totalCountEl) totalCountEl.textContent = allProducts.length;
+  if (totalValueEl) totalValueEl.textContent = formatMoney(totalValue);
+  if (lowCountEl) lowCountEl.textContent = lowCount;
+  if (emptyCountEl) emptyCountEl.textContent = emptyCount;
+
+  // 2. Filtrar lista según búsqueda, categoría y botón rápido
+  let list = [...allProducts];
+
+  // Filtro por selector
+  if (categorySelect !== 'todas') {
+    list = list.filter(p => (p.category || '').toLowerCase() === categorySelect.toLowerCase());
   }
+
+  // Filtro por Quick Filter
+  if (currentInventoryFilter === 'low') {
+    list = list.filter(p => {
+      const s = Number(p.stock) || 0;
+      return s > 0 && s <= 5;
+    });
+  } else if (currentInventoryFilter === 'empty') {
+    list = list.filter(p => (Number(p.stock) || 0) <= 0);
+  } else if (currentInventoryFilter === 'cervezas') {
+    list = list.filter(p => (p.category || '').toLowerCase().includes('cerveza'));
+  } else if (currentInventoryFilter === 'licores') {
+    list = list.filter(p => (p.category || '').toLowerCase().includes('licor'));
+  } else if (currentInventoryFilter === 'whisky') {
+    list = list.filter(p => (p.category || '').toLowerCase().includes('whisky'));
+  }
+
+  // Filtro por texto de búsqueda
   if (search) {
-    list = list.filter(p => p.name && p.name.toLowerCase().includes(search));
+    list = list.filter(p => {
+      const name = (p.name || p.nombre || '').toLowerCase();
+      const cat = (p.category || '').toLowerCase();
+      return name.includes(search) || cat.includes(search);
+    });
   }
 
-  if (totalCountEl) totalCountEl.textContent = list.length;
+  // 3. Renderizar Vista de Tarjetas (Cards View)
+  const cardsGrid = document.getElementById('inventoryCardsGrid');
+  if (cardsGrid) {
+    if (list.length === 0) {
+      cardsGrid.innerHTML = `
+        <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--text-muted);">
+          <i class="fa-solid fa-boxes-stacked" style="font-size: 32px; margin-bottom: 10px; color: rgba(255,255,255,0.2);"></i>
+          <p>No se encontraron productos con los filtros seleccionados.</p>
+        </div>
+      `;
+    } else {
+      cardsGrid.innerHTML = list.map(p => {
+        const prodName = p.name || p.nombre || 'Producto';
+        const prodCat = p.category || 'Varios';
+        const prodPrice = Number(p.price || p.precio) || 0;
+        const prodCost = Number(p.cost || p.costo) || 0;
+        const stock = typeof p.stock === 'number' ? p.stock : Number(p.stock) || 0;
 
-  if (list.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 20px; color: var(--text-muted);">No se encontraron productos</td></tr>';
-    return;
+        let badgeClass = 'ok';
+        let badgeText = 'Óptimo';
+        let barColor = '#00ff88';
+        let pct = Math.min(100, Math.max(8, (stock / 24) * 100));
+
+        if (stock <= 0) {
+          badgeClass = 'empty';
+          badgeText = 'Agotado';
+          barColor = '#ff3366';
+          pct = 4;
+        } else if (stock <= 5) {
+          badgeClass = 'low';
+          badgeText = 'Stock Bajo';
+          barColor = '#ffaa00';
+          pct = Math.max(12, (stock / 24) * 100);
+        }
+
+        // Icono por categoría
+        let catIcon = 'fa-solid fa-wine-glass';
+        if (prodCat.includes('cerveza')) catIcon = 'fa-solid fa-beer-mug-empty text-gold';
+        else if (prodCat.includes('whisky')) catIcon = 'fa-solid fa-martini-glass text-gold';
+        else if (prodCat.includes('michelada')) catIcon = 'fa-solid fa-lemon text-cyan';
+        else if (prodCat.includes('licor')) catIcon = 'fa-solid fa-wine-bottle text-purple';
+
+        const imgTag = p.image 
+          ? `<img src="${p.image}" class="inv-prod-img" onerror="this.outerHTML='<div class=\\'inv-prod-img\\' style=\\'display:flex;align-items:center;justify-content:center;\\'><i class=\\'${catIcon}\\'></i></div>'">`
+          : `<div class="inv-prod-img" style="display:flex;align-items:center;justify-content:center;"><i class="${catIcon}"></i></div>`;
+
+        return `
+          <div class="inv-prod-card">
+            <div class="inv-card-top">
+              ${imgTag}
+              <div class="inv-prod-info">
+                <div class="inv-prod-title" title="${escapeHtml(prodName)}">${escapeHtml(prodName)}</div>
+                <div class="inv-prod-cat">${escapeHtml(prodCat)}</div>
+              </div>
+            </div>
+
+            <div>
+              <div class="inv-stock-row">
+                <div class="inv-stock-qty" style="color: ${barColor};">${stock} <span style="font-size: 11px; font-weight: normal; color: var(--text-muted);">unidades</span></div>
+                <span class="stock-badge ${badgeClass}">${badgeText}</span>
+              </div>
+              <div class="inv-stock-bar-wrap">
+                <div class="inv-stock-bar" style="width: ${pct}%; background: ${barColor};"></div>
+              </div>
+            </div>
+
+            <div class="inv-card-footer">
+              <div>
+                <div class="inv-price-tag">${formatMoney(prodPrice)}</div>
+                ${prodCost > 0 ? `<div style="font-size: 10px; color: var(--text-muted);">Costo: ${formatMoney(prodCost)}</div>` : ''}
+              </div>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <button type="button" class="btn-refresh" style="padding: 4px 8px; font-size: 12px; background: rgba(255, 51, 102, 0.15); border-color: #ff3366; color: #ff3366;" onclick="quickAdjustStock(${p.id}, -1)" title="Restar 1">-1</button>
+                <button type="button" class="btn-refresh" style="padding: 4px 8px; font-size: 12px; background: rgba(0, 255, 136, 0.15); border-color: #00ff88; color: #00ff88;" onclick="quickAdjustStock(${p.id}, 1)" title="Sumar 1">+1</button>
+                <button type="button" class="btn-adjust-stock" onclick="openStockModal(${p.id})" title="Ajuste exacto">
+                  <i class="fa-solid fa-pen-to-square"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
   }
 
-  tbody.innerHTML = list.map(p => {
-    const stock = typeof p.stock === 'number' ? p.stock : 0;
-    let badgeClass = 'ok';
-    let badgeText = 'Óptimo';
-    if (stock <= 0) { badgeClass = 'empty'; badgeText = 'Agotado'; }
-    else if (stock <= 5) { badgeClass = 'low'; badgeText = 'Stock Bajo'; }
+  // 4. Renderizar Vista de Tabla (Table View)
+  const tbody = document.getElementById('inventoryTableBody');
+  if (tbody) {
+    if (list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 25px; color: var(--text-muted);">No se encontraron productos</td></tr>';
+    } else {
+      tbody.innerHTML = list.map(p => {
+        const prodName = p.name || p.nombre || 'Producto';
+        const prodCat = p.category || 'Varios';
+        const prodPrice = Number(p.price || p.precio) || 0;
+        const prodCost = Number(p.cost || p.costo) || 0;
+        const stock = typeof p.stock === 'number' ? p.stock : Number(p.stock) || 0;
+        const margin = prodPrice - prodCost;
+        const marginPct = prodPrice > 0 ? Math.round((margin / prodPrice) * 100) : 0;
 
-    return `
-      <tr>
-        <td><strong>${escapeHtml(p.name)}</strong></td>
-        <td><span style="font-size: 11px; text-transform: uppercase; color: var(--text-muted);">${escapeHtml(p.category || 'Varios')}</span></td>
-        <td>${formatMoney(p.price)}</td>
-        <td><strong style="font-size: 14px;">${stock}</strong> un.</td>
-        <td><span class="stock-badge ${badgeClass}">${badgeText}</span></td>
-      </tr>
-    `;
-  }).join('');
+        let badgeClass = 'ok';
+        let badgeText = 'Óptimo';
+        if (stock <= 0) { badgeClass = 'empty'; badgeText = 'Agotado'; }
+        else if (stock <= 5) { badgeClass = 'low'; badgeText = 'Stock Bajo'; }
+
+        return `
+          <tr>
+            <td>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <strong>${escapeHtml(prodName)}</strong>
+              </div>
+            </td>
+            <td><span style="font-size: 11px; text-transform: uppercase; color: var(--text-muted);">${escapeHtml(prodCat)}</span></td>
+            <td>${formatMoney(prodCost)}</td>
+            <td><strong class="text-gold">${formatMoney(prodPrice)}</strong></td>
+            <td><span style="font-size: 12px; color: ${margin > 0 ? '#00ff88' : 'var(--text-muted)'};">${formatMoney(margin)} (${marginPct}%)</span></td>
+            <td><strong style="font-size: 15px; font-family: 'Orbitron', monospace;">${stock}</strong> un.</td>
+            <td><span class="stock-badge ${badgeClass}">${badgeText}</span></td>
+            <td style="text-align: right;">
+              <div style="display: inline-flex; gap: 4px;">
+                <button type="button" class="btn-refresh" style="padding: 2px 6px; font-size: 11px; background: rgba(255, 51, 102, 0.15); border-color: #ff3366; color: #ff3366;" onclick="quickAdjustStock(${p.id}, -1)">-1</button>
+                <button type="button" class="btn-refresh" style="padding: 2px 6px; font-size: 11px; background: rgba(0, 255, 136, 0.15); border-color: #00ff88; color: #00ff88;" onclick="quickAdjustStock(${p.id}, 1)">+1</button>
+                <button type="button" class="btn-refresh" style="padding: 2px 8px; font-size: 11px; background: rgba(0, 243, 255, 0.15); border-color: #00f3ff; color: #00f3ff;" onclick="openStockModal(${p.id})">Editar</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+  }
+}
+
+// Modal de Ajuste de Stock
+function openStockModal(prodId) {
+  const prod = (cachedData.inventory || []).find(p => p.id === Number(prodId) || p.id === prodId);
+  if (!prod) return;
+
+  activeAdjustProduct = prod;
+  const modal = document.getElementById('modalStockAdjust');
+  const nameEl = document.getElementById('modalStockProdName');
+  const catEl = document.getElementById('modalStockProdCategory');
+  const displayEl = document.getElementById('modalStockCurrentDisplay');
+  const inputEl = document.getElementById('modalStockExactInput');
+
+  if (nameEl) nameEl.textContent = prod.name || prod.nombre;
+  if (catEl) catEl.textContent = prod.category || 'Categoría';
+  const curStock = Number(prod.stock) || 0;
+  if (displayEl) displayEl.textContent = curStock;
+  if (inputEl) inputEl.value = curStock;
+
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeStockModal() {
+  activeAdjustProduct = null;
+  const modal = document.getElementById('modalStockAdjust');
+  if (modal) modal.classList.add('hidden');
+}
+
+function adjustStockDelta(delta) {
+  const inputEl = document.getElementById('modalStockExactInput');
+  const displayEl = document.getElementById('modalStockCurrentDisplay');
+  if (!inputEl) return;
+
+  let val = Number(inputEl.value) || 0;
+  val = Math.max(0, val + Number(delta));
+  inputEl.value = val;
+  if (displayEl) displayEl.textContent = val;
+}
+
+async function saveStockAdjustment() {
+  if (!activeAdjustProduct) return;
+
+  const inputEl = document.getElementById('modalStockExactInput');
+  const newStock = Math.max(0, Number(inputEl ? inputEl.value : 0));
+  const prodId = activeAdjustProduct.id;
+
+  try {
+    const res = await fetch('/api/remote/update-stock', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-token': authToken || 'level-secret-token-2026'
+      },
+      body: JSON.stringify({
+        productId: prodId,
+        newStock: newStock,
+        razon: 'Ajuste remoto desde Dashboard Web',
+        usuario: 'Administrador (Dashboard)'
+      })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      // Actualizar caché local
+      const idx = (cachedData.inventory || []).findIndex(p => p.id === prodId);
+      if (idx >= 0) {
+        cachedData.inventory[idx].stock = newStock;
+      }
+      closeStockModal();
+      renderInventory();
+      showLiveNotification('📦 Stock Actualizado', `${activeAdjustProduct.name || 'Producto'} fijado en ${newStock} unidades`);
+    } else {
+      alert("Error actualizando stock: " + (data.error || 'Desconocido'));
+    }
+  } catch (err) {
+    alert("Error de conexión al actualizar stock: " + err.message);
+  }
+}
+
+// Ajuste rápido en un solo clic (+1 / -1)
+async function quickAdjustStock(prodId, delta) {
+  const prod = (cachedData.inventory || []).find(p => p.id === Number(prodId) || p.id === prodId);
+  if (!prod) return;
+
+  const curStock = Number(prod.stock) || 0;
+  const newStock = Math.max(0, curStock + delta);
+
+  // Optimistic UI Update
+  prod.stock = newStock;
+  renderInventory();
+
+  try {
+    const res = await fetch('/api/remote/update-stock', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-token': authToken || 'level-secret-token-2026'
+      },
+      body: JSON.stringify({
+        productId: prodId,
+        delta: delta,
+        razon: `Ajuste rápido (${delta > 0 ? '+' : ''}${delta})`,
+        usuario: 'Administrador (Dashboard)'
+      })
+    });
+
+    const data = await res.json();
+    if (!data.success) {
+      prod.stock = curStock; // Rollback
+      renderInventory();
+      alert("Error al ajustar stock: " + data.error);
+    }
+  } catch (err) {
+    prod.stock = curStock; // Rollback
+    renderInventory();
+    console.error("Error en quickAdjustStock:", err);
+  }
 }
 
 // ==========================================

@@ -356,25 +356,65 @@
       </section>
 
       <!-- ============================================== -->
-      <!-- PESTAÑA 5: INVENTARIO EN LA NUBE -->
+      <!-- PESTAÑA 5: INVENTARIO & STOCK EN NUBE -->
       <!-- ============================================== -->
       <section id="view-inventory" class="view-panel">
         <div class="section-top-bar">
           <div>
             <h2 class="section-title"><i class="fa-solid fa-boxes-stacked text-success"></i> Inventario & Stock en Nube</h2>
-            <p class="section-subtitle">Supervisión remota de existencias, productos críticos y valoración</p>
+            <p class="section-subtitle">Supervisión remota en vivo, ajuste de existencias y control de productos críticos</p>
           </div>
-          <div class="inventory-stats-badge" id="inventoryValorizationBadge">
-            Total Productos: <strong id="invTotalCount">0</strong>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <div class="view-toggle-group">
+              <button type="button" class="btn-toggle-view active" id="btnViewCards" onclick="setInventoryViewMode('cards')" title="Vista en Tarjetas">
+                <i class="fa-solid fa-grip"></i>
+              </button>
+              <button type="button" class="btn-toggle-view" id="btnViewTable" onclick="setInventoryViewMode('table')" title="Vista en Tabla">
+                <i class="fa-solid fa-table-list"></i>
+              </button>
+            </div>
           </div>
         </div>
 
-        <div class="filters-bar">
-          <div class="filter-group">
-            <label><i class="fa-solid fa-magnifying-glass"></i> Buscar:</label>
-            <input type="text" id="inventorySearchInput" placeholder="Buscar producto..." oninput="renderInventory()">
+        <!-- KPI Cards de Inventario -->
+        <div class="inv-kpis-grid">
+          <div class="inv-kpi-card">
+            <div class="inv-kpi-icon text-cyan"><i class="fa-solid fa-boxes-packing"></i></div>
+            <div>
+              <div class="inv-kpi-value" id="invTotalCount">0</div>
+              <div class="inv-kpi-label">Productos en Catálogo</div>
+            </div>
           </div>
-          <div class="filter-group">
+          <div class="inv-kpi-card">
+            <div class="inv-kpi-icon text-gold"><i class="fa-solid fa-sack-dollar"></i></div>
+            <div>
+              <div class="inv-kpi-value text-gold" id="invTotalValue">$0</div>
+              <div class="inv-kpi-label">Valor Total Estimado</div>
+            </div>
+          </div>
+          <div class="inv-kpi-card">
+            <div class="inv-kpi-icon text-warning"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            <div>
+              <div class="inv-kpi-value text-warning" id="invLowCount">0</div>
+              <div class="inv-kpi-label">Stock Bajo (≤ 5 un.)</div>
+            </div>
+          </div>
+          <div class="inv-kpi-card">
+            <div class="inv-kpi-icon text-danger"><i class="fa-solid fa-circle-xmark"></i></div>
+            <div>
+              <div class="inv-kpi-value text-danger" id="invEmptyCount">0</div>
+              <div class="inv-kpi-label">Productos Agotados</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Barra de Búsqueda y Filtros Rápidos -->
+        <div class="filters-bar" style="margin-top: 14px; margin-bottom: 12px;">
+          <div class="filter-group" style="flex: 1.5;">
+            <label><i class="fa-solid fa-magnifying-glass"></i> Buscar Producto:</label>
+            <input type="text" id="inventorySearchInput" placeholder="Ej: Corona, Michelada, Old Parr..." oninput="renderInventory()">
+          </div>
+          <div class="filter-group" style="flex: 1;">
             <label><i class="fa-solid fa-layer-group"></i> Categoría:</label>
             <select id="inventoryCategoryFilter" onchange="renderInventory()">
               <option value="todas">Todas las categorías</option>
@@ -382,23 +422,91 @@
           </div>
         </div>
 
-        <div class="table-responsive">
+        <!-- Botones de Filtro Rápido -->
+        <div class="inv-quick-filters">
+          <button type="button" class="btn-quick-filter active" onclick="setInventoryQuickFilter('todos', this)">
+            <i class="fa-solid fa-border-all"></i> Todos
+          </button>
+          <button type="button" class="btn-quick-filter" onclick="setInventoryQuickFilter('low', this)">
+            <i class="fa-solid fa-triangle-exclamation text-warning"></i> Stock Bajo
+          </button>
+          <button type="button" class="btn-quick-filter" onclick="setInventoryQuickFilter('empty', this)">
+            <i class="fa-solid fa-circle-xmark text-danger"></i> Agotados
+          </button>
+          <button type="button" class="btn-quick-filter" onclick="setInventoryQuickFilter('cervezas', this)">
+            <i class="fa-solid fa-beer-mug-empty"></i> Cervezas
+          </button>
+          <button type="button" class="btn-quick-filter" onclick="setInventoryQuickFilter('licores', this)">
+            <i class="fa-solid fa-wine-bottle"></i> Licores
+          </button>
+          <button type="button" class="btn-quick-filter" onclick="setInventoryQuickFilter('whisky', this)">
+            <i class="fa-solid fa-martini-glass"></i> Whisky
+          </button>
+        </div>
+
+        <!-- Contenedor 1: Tarjetas Visuales (Grid Pro para Móvil y PC) -->
+        <div id="inventoryCardsGrid" class="inv-cards-grid">
+          <!-- Inyección de tarjetas dinámicas -->
+        </div>
+
+        <!-- Contenedor 2: Tabla Detallada -->
+        <div id="inventoryTableView" class="table-responsive hidden">
           <table class="pro-table">
             <thead>
               <tr>
                 <th>Producto</th>
                 <th>Categoría</th>
+                <th>Costo</th>
                 <th>Precio Venta</th>
+                <th>Margen</th>
                 <th>Stock Actual</th>
                 <th>Estado</th>
+                <th style="text-align:right;">Ajuste Rápido</th>
               </tr>
             </thead>
             <tbody id="inventoryTableBody">
-              <!-- Inyección de inventario -->
+              <!-- Inyección de filas de tabla -->
             </tbody>
           </table>
         </div>
       </section>
+
+      <!-- Modal de Ajuste Rápido de Stock -->
+      <div id="modalStockAdjust" class="login-overlay hidden" style="z-index: 9999999;">
+        <div class="login-card" style="max-width: 440px;">
+          <div class="login-brand" style="margin-bottom: 12px;">
+            <i class="fa-solid fa-sliders text-cyan" style="font-size: 26px;"></i>
+            <h2 id="modalStockProdName" style="font-size: 16px; margin: 6px 0; color: #fff;">Ajustar Stock</h2>
+            <p id="modalStockProdCategory" style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Categoría</p>
+          </div>
+
+          <div style="background: var(--bg-dark); border: 1px solid var(--border-card); border-radius: 12px; padding: 14px; margin-bottom: 14px; text-align: center;">
+            <span style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">STOCK DISPONIBLE</span>
+            <div id="modalStockCurrentDisplay" style="font-size: 28px; font-weight: 800; color: #00f3ff; font-family: 'Orbitron', monospace;">0</div>
+          </div>
+
+          <div style="display: flex; gap: 8px; justify-content: center; margin-bottom: 14px;">
+            <button type="button" class="btn-refresh" style="padding: 10px 16px; background: rgba(255, 51, 102, 0.15); border-color: #ff3366; color: #ff3366;" onclick="adjustStockDelta(-5)">-5</button>
+            <button type="button" class="btn-refresh" style="padding: 10px 16px; background: rgba(255, 51, 102, 0.15); border-color: #ff3366; color: #ff3366;" onclick="adjustStockDelta(-1)">-1</button>
+            <button type="button" class="btn-refresh" style="padding: 10px 16px; background: rgba(0, 255, 136, 0.15); border-color: #00ff88; color: #00ff88;" onclick="adjustStockDelta(+1)">+1</button>
+            <button type="button" class="btn-refresh" style="padding: 10px 16px; background: rgba(0, 255, 136, 0.15); border-color: #00ff88; color: #00ff88;" onclick="adjustStockDelta(+5)">+5</button>
+          </div>
+
+          <div class="config-field" style="margin-bottom: 14px;">
+            <label>O ingresar cantidad exacta:</label>
+            <input type="number" id="modalStockExactInput" style="text-align: center; font-size: 18px; font-weight: 700;" min="0">
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <button type="button" class="btn-refresh" style="background: rgba(255, 255, 255, 0.08); border-color: rgba(255,255,255,0.2); justify-content: center;" onclick="closeStockModal()">
+              Cancelar
+            </button>
+            <button type="button" class="btn-refresh" style="background: linear-gradient(135deg, #00f3ff, #0077ff); color: #000; font-weight: 700; border: none; justify-content: center;" onclick="saveStockAdjustment()">
+              <i class="fa-solid fa-check"></i> Guardar
+            </button>
+          </div>
+        </div>
+      </div>
 
       <!-- ============================================== -->
       <!-- PESTAÑA 6: CONFIGURACIÓN & VINCULACIÓN NUBE -->

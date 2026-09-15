@@ -40,6 +40,34 @@ if (!fs.existsSync(DATA_DIR)) {
   }
 }
 
+const DEFAULT_PRODUCTS = [
+  { id: 1, name: "Club Colombia", price: 6000, cost: 3500, stock: 24, category: "cervezas", image: "images/Club colombia.png" },
+  { id: 2, name: "Redd's", price: 6000, cost: 3500, stock: 18, category: "cervezas", image: "images/Redd,s.png" },
+  { id: 3, name: "Coronita", price: 6000, cost: 3800, stock: 20, category: "cervezas", image: "images/Coronita.png" },
+  { id: 4, name: "Corona", price: 10000, cost: 6500, stock: 15, category: "cervezas", image: "images/Corona.png" },
+  { id: 5, name: "Michelada Soda Ginger", price: 9000, cost: 4000, stock: 30, category: "micheladas", image: "images/Michelada soda ginger.png" },
+  { id: 6, name: "Michelada Coronita", price: 10000, cost: 5000, stock: 25, category: "micheladas", image: "images/michelada coronita.png" },
+  { id: 7, name: "Michelada Club Colombia", price: 10000, cost: 5000, stock: 25, category: "micheladas", image: "images/Michelada club colombia.png" },
+  { id: 8, name: "Michelada Redd's", price: 10000, cost: 5000, stock: 20, category: "micheladas", image: "images/Micheladas Redd,s.jpg" },
+  { id: 9, name: "Michelada Corona", price: 15000, cost: 8000, stock: 15, category: "micheladas", image: "images/Michelada Corona.png" },
+  { id: 10, name: "Aguardiente Putumayo 1/2", price: 55000, cost: 32000, stock: 12, category: "licores", image: "images/Aguardiente media.png" },
+  { id: 11, name: "Ron Viejo Caldas 1/2", price: 55000, cost: 32000, stock: 10, category: "licores", image: "images/Ron viejos de caldas media .png" },
+  { id: 12, name: "Ron Caldas 8 Años 1/2", price: 90000, cost: 55000, stock: 8, category: "licores", image: "images/Ron de caldas 8 años.webp" },
+  { id: 13, name: "Tequila Olmeca 1/2", price: 90000, cost: 55000, stock: 6, category: "licores", image: "images/Tequila olmeca media.ng.jpg" },
+  { id: 14, name: "Aguardiente Putumayo", price: 100000, cost: 60000, stock: 14, category: "licores", image: "images/Aguadiente Putumayo botello.png" },
+  { id: 15, name: "Ron Viejo de Caldas", price: 100000, cost: 60000, stock: 12, category: "licores", image: "images/Ron viejos de caldas media .png" },
+  { id: 16, name: "Ron Caldas 8 Años", price: 170000, cost: 110000, stock: 7, category: "licores", image: "images/Ron de caldas 8 años.webp" },
+  { id: 17, name: "Tequila Olmeca", price: 165000, cost: 105000, stock: 5, category: "licores", image: "images/Tequila olmeca media.ng.jpg" },
+  { id: 18, name: "Smirnoff Lulo", price: 100000, cost: 65000, stock: 9, category: "licores", image: "images/smirnoff vodka.png" },
+  { id: 19, name: "Smirnoff Tamarindo", price: 100000, cost: 65000, stock: 8, category: "licores", image: "images/smirnoff Tamarindo.png" },
+  { id: 20, name: "Old Parr", price: 240000, cost: 160000, stock: 6, category: "whisky", image: "images/old parr.png" },
+  { id: 21, name: "Chivas Regal", price: 260000, cost: 175000, stock: 5, category: "whisky", image: "images/Chivas regal.png" },
+  { id: 22, name: "Jack Daniel's", price: 230000, cost: 150000, stock: 6, category: "whisky", image: "images/jack danniel.png" },
+  { id: 23, name: "Buchanan's Deluxe 12 A", price: 250000, cost: 165000, stock: 8, category: "whisky", image: "images/Buchanan´s Deluxe.webp" },
+  { id: 24, name: "Buchanan's Two Souls", price: 285000, cost: 195000, stock: 4, category: "whisky", image: "images/Buchanan´s Two sould.png" },
+  { id: 25, name: "Buchanan's Master", price: 280000, cost: 190000, stock: 5, category: "whisky", image: "images/Buchanan´s Master.webp" }
+];
+
 const defaultDB = {
   info: {
     nombre: "LEVEL Gastrobar",
@@ -60,7 +88,7 @@ const defaultDB = {
   historial_cierres: [],
   contabilidad: [],
   ventas_pendientes: [],
-  productos: [],
+  productos: [...DEFAULT_PRODUCTS],
   inventario_historial: [],
   movimientos: [] // Timeline unificado de auditoría
 };
@@ -71,8 +99,12 @@ function loadDB() {
   try {
     if (fs.existsSync(DB_FILE)) {
       const data = fs.readFileSync(DB_FILE, 'utf8');
-      db = { ...defaultDB, ...JSON.parse(data) };
-      console.log(`✅ Base de datos cargada: ${db.ventas.length} ventas, ${db.movimientos.length} movimientos.`);
+      const loaded = JSON.parse(data);
+      db = { ...defaultDB, ...loaded };
+      if (!Array.isArray(db.productos) || db.productos.length === 0) {
+        db.productos = [...DEFAULT_PRODUCTS];
+      }
+      console.log(`✅ Base de datos cargada: ${db.ventas.length} ventas, ${db.productos.length} productos.`);
     } else {
       saveDB();
     }
@@ -805,6 +837,51 @@ app.post('/api/remote/broadcast', checkAuthToken, (req, res) => {
     );
 
     res.json({ success: true, action });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Ajuste remoto de stock desde el celular o dashboard
+app.post('/api/remote/update-stock', checkAuthToken, (req, res) => {
+  try {
+    const { productId, delta, newStock, razon, usuario } = req.body;
+    const prod = db.productos.find(p => p.id === Number(productId) || p.id === productId);
+    if (!prod) return res.status(404).json({ error: 'Producto no encontrado' });
+
+    let finalStock = Number(prod.stock) || 0;
+    if (newStock !== undefined) {
+      finalStock = Math.max(0, Number(newStock));
+    } else if (delta !== undefined) {
+      finalStock = Math.max(0, finalStock + Number(delta));
+    }
+
+    const stockAnterior = prod.stock;
+    prod.stock = finalStock;
+
+    const mov = registrarMovimiento(
+      'inventario',
+      `Ajuste Remoto de Stock: ${prod.name}`,
+      `De ${stockAnterior} a ${finalStock} unidades | Motivo: ${razon || 'Ajuste desde celular'}`,
+      0,
+      { usuario: usuario || 'Admin Remoto', producto_id: prod.id }
+    );
+
+    db.info.ultima_sincronizacion = new Date().toISOString();
+    saveDB();
+
+    broadcastLiveEvent('inventory_updated', { products: db.productos, movimiento: mov });
+
+    pendingPosActions.push({
+      id: `stock_${Date.now()}`,
+      tipo: 'stock_update',
+      productId: prod.id,
+      newStock: finalStock,
+      mensaje: `Stock modificado remotamente: ${prod.name} -> ${finalStock} un.`,
+      emisor: usuario || 'Admin Remoto'
+    });
+
+    res.json({ success: true, product: prod });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1055,6 +1055,245 @@ body {
   font-size: 12px;
 }
 
+/* =========================================================
+   NUEVO SISTEMA DE INVENTARIO PROFESIONAL & TARJETAS
+   ========================================================= */
+
+.inv-kpis-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.inv-kpi-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.inv-kpi-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 243, 255, 0.3);
+}
+
+.inv-kpi-icon {
+  font-size: 24px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.inv-kpi-value {
+  font-size: 18px;
+  font-weight: 800;
+  font-family: 'Orbitron', monospace;
+  color: #fff;
+}
+
+.inv-kpi-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.view-toggle-group {
+  display: flex;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-card);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 4px;
+}
+
+.btn-toggle-view {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.btn-toggle-view.active, .btn-toggle-view:hover {
+  background: rgba(0, 243, 255, 0.15);
+  color: #00f3ff;
+}
+
+.inv-quick-filters {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  margin-bottom: 14px;
+}
+
+.btn-quick-filter {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  color: var(--text-secondary);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.btn-quick-filter.active, .btn-quick-filter:hover {
+  background: rgba(0, 243, 255, 0.12);
+  border-color: #00f3ff;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(0, 243, 255, 0.2);
+}
+
+/* Grid de Tarjetas de Productos */
+.inv-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.inv-prod-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.inv-prod-card:hover {
+  border-color: rgba(0, 243, 255, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+}
+
+.inv-card-top {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.inv-prod-img {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.inv-prod-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.inv-prod-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 3px;
+}
+
+.inv-prod-cat {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.inv-stock-bar-wrap {
+  background: rgba(255, 255, 255, 0.06);
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 6px 0;
+}
+
+.inv-stock-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.inv-stock-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.inv-stock-qty {
+  font-size: 18px;
+  font-weight: 800;
+  font-family: 'Orbitron', monospace;
+}
+
+.inv-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 10px;
+}
+
+.inv-price-tag {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--level-gold);
+}
+
+.btn-adjust-stock {
+  background: rgba(0, 243, 255, 0.12);
+  border: 1px solid rgba(0, 243, 255, 0.35);
+  color: #00f3ff;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.2s;
+}
+
+.btn-adjust-stock:hover {
+  background: #00f3ff;
+  color: #000;
+  box-shadow: 0 0 12px rgba(0, 243, 255, 0.5);
+}
+
 /* Responsive */
 @media (max-width: 900px) {
   .charts-row, .settings-grid {
@@ -1063,4 +1302,8 @@ body {
   .btn-text-desktop {
     display: none;
   }
+  .inv-cards-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
 }
+
