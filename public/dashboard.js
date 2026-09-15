@@ -110,18 +110,83 @@ function logout() {
 }
 
 // ==========================================
-// 2. NAVEGACIÓN Y PESTAÑAS
+// 2. SISTEMA DE AUDIO, FULLSCREEN & NAVEGACIÓN
 // ==========================================
+
+let soundEnabled = localStorage.getItem('level_sound_enabled') !== 'false';
+
+function playChime(type = 'sale') {
+  if (!soundEnabled) return;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+
+    if (type === 'sale') {
+      // Acorde ascendente cyber (C5, E5, G5, C6)
+      const notes = [523.25, 659.25, 783.99, 1046.50];
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.07);
+        gain.gain.setValueAtTime(0.18, now + idx * 0.07);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.07 + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + idx * 0.07);
+        osc.stop(now + idx * 0.07 + 0.36);
+      });
+    } else if (type === 'alert') {
+      // Alerta de campana digital
+      [880, 1174.66].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.12);
+        gain.gain.setValueAtTime(0.22, now + idx * 0.12);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.12 + 0.5);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + idx * 0.12);
+        osc.stop(now + idx * 0.12 + 0.51);
+      });
+    }
+  } catch (e) {}
+}
+
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  localStorage.setItem('level_sound_enabled', soundEnabled);
+  const btn = document.getElementById('btnSoundToggle');
+  const icon = document.getElementById('soundIcon');
+  if (btn) btn.classList.toggle('sound-active', soundEnabled);
+  if (icon) icon.className = soundEnabled ? 'fa-solid fa-volume-high' : 'fa-solid fa-volume-xmark';
+  if (soundEnabled) playChime('sale');
+}
+
+function toggleFullScreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    if (document.exitFullscreen) document.exitFullscreen();
+  }
+}
 
 function switchTab(tabId) {
   currentTab = tabId;
+  // Desactivar todos los botones desktop y móviles
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
   document.querySelectorAll('.view-panel').forEach(panel => panel.classList.remove('active'));
 
   const activeBtn = document.getElementById(`tab-${tabId}`);
+  const activeMBtn = document.getElementById(`mnav-${tabId}`);
   const activePanel = document.getElementById(`view-${tabId}`);
 
   if (activeBtn) activeBtn.classList.add('active');
+  if (activeMBtn) activeMBtn.classList.add('active');
   if (activePanel) activePanel.classList.add('active');
 
   if (tabId === 'movements') loadMovements();
@@ -151,25 +216,35 @@ function initEventSourceStream() {
     liveEventSource.addEventListener('sale_created', (e) => {
       try {
         const payload = JSON.parse(e.data);
-        showLiveNotification(`🔔 Nueva Venta: ${formatMoney(payload.venta?.monto)}`, `${payload.venta?.mesa || 'Caja'} - ${payload.venta?.cajero || 'Cajero'}`);
+        const monto = formatMoney(payload.venta?.monto);
+        const lugar = payload.venta?.mesa || 'Caja';
+        const cajero = payload.venta?.cajero || 'Cajero';
+        showLiveNotification(`🔔 Nueva Venta: ${monto}`, `${lugar} | ${cajero}`);
+        playChime('sale');
       } catch (err) {}
       fetchDashboardData();
+      if (currentTab === 'sales') loadSales();
+      if (currentTab === 'movements') loadMovements();
     });
 
     liveEventSource.addEventListener('tables_updated', () => {
       fetchDashboardData();
     });
 
-    liveEventSource.addEventListener('session_changed', (e) => {
+    liveEventSource.addEventListener('session_changed', () => {
       fetchDashboardData();
+      playChime('alert');
+      if (currentTab === 'movements') loadMovements();
     });
 
-    liveEventSource.addEventListener('expense_created', (e) => {
+    liveEventSource.addEventListener('expense_created', () => {
       fetchDashboardData();
+      if (currentTab === 'movements') loadMovements();
     });
 
     liveEventSource.addEventListener('inventory_updated', () => {
       fetchDashboardData();
+      if (currentTab === 'inventory') loadInventory();
     });
 
     liveEventSource.addEventListener('pos_heartbeat', () => {
@@ -178,10 +253,10 @@ function initEventSourceStream() {
 
     liveEventSource.addEventListener('pos_exit', () => {
       fetchDashboardData();
+      playChime('alert');
     });
 
     liveEventSource.onerror = () => {
-      // Reintento automático
       setTimeout(() => {
         if (sessionStorage.getItem('level_auth_token')) {
           initEventSourceStream();
@@ -203,20 +278,20 @@ function showLiveNotification(title, message) {
     border: 1px solid #00f3ff;
     box-shadow: 0 10px 30px rgba(0, 243, 255, 0.4);
     color: #fff;
-    padding: 12px 18px;
-    border-radius: 12px;
+    padding: 14px 20px;
+    border-radius: 14px;
     z-index: 999999;
     font-family: inherit;
     display: flex;
     align-items: center;
     gap: 12px;
-    animation: remoteFadeIn 0.25s ease;
+    animation: tabSlideUp 0.3s ease;
   `;
   toast.innerHTML = `
-    <i class="fa-solid fa-bolt" style="color:#00f3ff; font-size:18px;"></i>
+    <i class="fa-solid fa-bolt" style="color:#00f3ff; font-size:20px;"></i>
     <div>
-      <div style="font-weight:700; font-size:13px; color:#00f3ff;">${title}</div>
-      <div style="font-size:11px; color:#94a3b8;">${message}</div>
+      <div style="font-weight:700; font-size:13px; color:#00f3ff; font-family:'Orbitron', sans-serif;">${title}</div>
+      <div style="font-size:12px; color:#94a3b8; margin-top:2px;">${message}</div>
     </div>
   `;
   document.body.appendChild(toast);
@@ -227,9 +302,17 @@ function initDashboard() {
   fetchDashboardData();
   initEventSourceStream();
 
+  // Sonido botón
+  const soundBtn = document.getElementById('btnSoundToggle');
+  const soundIcon = document.getElementById('soundIcon');
+  if (soundBtn) soundBtn.classList.toggle('sound-active', soundEnabled);
+  if (soundIcon) soundIcon.className = soundEnabled ? 'fa-solid fa-volume-high' : 'fa-solid fa-volume-xmark';
+
   // Configurar URLs en vista de ajustes
   const curOrigin = window.location.origin;
-  document.getElementById('serverUrlDisplay').value = curOrigin;
+  const urlDisplay = document.getElementById('serverUrlDisplay');
+  if (urlDisplay) urlDisplay.value = curOrigin;
+  
   const qrImg = document.getElementById('qrCodeImage');
   if (qrImg) {
     qrImg.onerror = function() {
@@ -250,6 +333,45 @@ function formatMoney(amount) {
   return '$' + n.toLocaleString('es-CO');
 }
 
+// Animación de contador numérico fluido (Count-Up)
+function animateCounter(elementId, targetValue, isCurrency = true) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+
+  const target = Number(targetValue) || 0;
+  const currentStr = el.textContent.replace(/[^0-9.-]/g, '');
+  const start = Number(currentStr) || 0;
+
+  if (start === target) {
+    el.textContent = isCurrency ? formatMoney(target) : target.toLocaleString('es-CO');
+    return;
+  }
+
+  el.classList.remove('bump-anim');
+  void el.offsetWidth;
+  el.classList.add('bump-anim');
+
+  const duration = 500;
+  const startTime = performance.now();
+
+  function update(time) {
+    const elapsed = time - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const ease = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+    const current = Math.round(start + (target - start) * ease);
+
+    el.textContent = isCurrency ? formatMoney(current) : current.toLocaleString('es-CO');
+
+    if (progress < 1) {
+      requestAnimationFrame(update);
+    } else {
+      el.textContent = isCurrency ? formatMoney(target) : target.toLocaleString('es-CO');
+    }
+  }
+
+  requestAnimationFrame(update);
+}
+
 async function fetchDashboardData() {
   const refreshIcon = document.getElementById('refreshIcon');
   if (refreshIcon) refreshIcon.classList.add('fa-spin');
@@ -265,13 +387,19 @@ async function fetchDashboardData() {
 
     // Actualizar indicador de sincronización
     const now = new Date();
-    document.getElementById('syncTimeText').textContent = now.toLocaleTimeString('es-CO');
-    document.getElementById('syncStatusText').textContent = 'En vivo (0ms)';
-    document.getElementById('syncStatusPill').style.borderColor = 'rgba(0, 255, 136, 0.4)';
+    const syncTimeText = document.getElementById('syncTimeText');
+    const syncStatusText = document.getElementById('syncStatusText');
+    const syncStatusPill = document.getElementById('syncStatusPill');
+
+    if (syncTimeText) syncTimeText.textContent = now.toLocaleTimeString('es-CO');
+    if (syncStatusText) syncStatusText.textContent = 'En vivo (0ms)';
+    if (syncStatusPill) syncStatusPill.style.borderColor = 'rgba(0, 255, 136, 0.4)';
   } catch (err) {
     console.warn("Error en polling dashboard:", err);
-    document.getElementById('syncStatusText').textContent = 'Reconectando...';
-    document.getElementById('syncStatusPill').style.borderColor = 'rgba(255, 51, 102, 0.4)';
+    const syncStatusText = document.getElementById('syncStatusText');
+    const syncStatusPill = document.getElementById('syncStatusPill');
+    if (syncStatusText) syncStatusText.textContent = 'Reconectando...';
+    if (syncStatusPill) syncStatusPill.style.borderColor = 'rgba(255, 51, 102, 0.4)';
   } finally {
     if (refreshIcon) setTimeout(() => refreshIcon.classList.remove('fa-spin'), 300);
   }
@@ -293,51 +421,68 @@ function renderOverview(data) {
   const cajaSubtext = document.getElementById('cajaSubtext');
   const syncStatusText = document.getElementById('syncStatusText');
 
-  if (k.posOnline && k.cajaAbierta) {
-    // 1. POS ABIERTO Y OPERANDO
-    cajaStatusLabel.innerHTML = '<span style="color:#00ff88;"><i class="fa-solid fa-circle-check"></i> ESTADO: TURNO ABIERTO & EN LÍNEA</span>';
-    cajeroActiveName.textContent = `Cajero: ${k.cajeroActual || 'Activo'}`;
-    cajaCalculatedBalance.textContent = formatMoney(k.saldoEnCajaCalculado);
-    if (cajaSubtext) cajaSubtext.textContent = 'Turno en curso | Ventas activas en tiempo real';
-    cajaBanner.style.borderColor = 'rgba(0, 255, 136, 0.4)';
-    cajaBanner.style.background = 'linear-gradient(135deg, rgba(0, 255, 136, 0.08), rgba(15, 23, 42, 0.9))';
-    cajaBanner.style.boxShadow = '0 0 20px rgba(0, 255, 136, 0.15)';
-    if (syncStatusText) syncStatusText.textContent = 'POS En Línea (Activo)';
-  } else if (k.posOnline && !k.cajaAbierta) {
-    // 2. POS ABIERTO PERO ESPERANDO APERTURA DE CAJA
-    cajaStatusLabel.innerHTML = '<span style="color:#ffb703;"><i class="fa-solid fa-clock"></i> POS EN LÍNEA (ESPERANDO APERTURA)</span>';
-    cajeroActiveName.textContent = 'Sin turno abierto en caja';
-    cajaCalculatedBalance.textContent = formatMoney(k.saldoEnCajaCalculado || 0);
-    if (cajaSubtext) cajaSubtext.innerHTML = '<span style="color:#ffb703;"><i class="fa-solid fa-triangle-exclamation"></i> Terminal POS encendida, pendiente de abrir turno con base inicial.</span>';
-    cajaBanner.style.borderColor = 'rgba(255, 183, 3, 0.5)';
-    cajaBanner.style.background = 'linear-gradient(135deg, rgba(255, 183, 3, 0.1), rgba(15, 23, 42, 0.9))';
-    cajaBanner.style.boxShadow = '0 0 20px rgba(255, 183, 3, 0.2)';
-    if (syncStatusText) syncStatusText.textContent = 'POS En Línea (Esperando Apertura)';
-  } else {
-    // 3. PROGRAMA CERRADO / TERMINAL APAGADA (BLOQUEADO)
-    cajaStatusLabel.innerHTML = '<span style="color:#ff3366; font-weight:800; letter-spacing:0.5px;"><i class="fa-solid fa-lock fa-bounce"></i> PROGRAMA CERRADO - CAJA BLOQUEADA</span>';
-    cajeroActiveName.textContent = 'Terminal Apagada / Fuera de Línea';
-    cajaCalculatedBalance.textContent = formatMoney(k.saldoEnCajaCalculado || 0);
-    if (cajaSubtext) cajaSubtext.innerHTML = '<span style="color:#f87171;"><i class="fa-solid fa-shield-halved"></i> Terminal física cerrada y bloqueada. Movimientos detenidos.</span>';
-    cajaBanner.style.borderColor = 'rgba(255, 51, 102, 0.7)';
-    cajaBanner.style.background = 'linear-gradient(135deg, rgba(255, 51, 102, 0.15), rgba(15, 23, 42, 0.95))';
-    cajaBanner.style.boxShadow = '0 0 25px rgba(255, 51, 102, 0.25)';
-    if (syncStatusText) syncStatusText.textContent = 'PROGRAMA CERRADO (BLOQUEADO)';
+  if (cajaBanner && cajaStatusLabel && cajeroActiveName && cajaCalculatedBalance) {
+    if (k.posOnline && k.cajaAbierta) {
+      // 1. POS ABIERTO Y OPERANDO
+      cajaStatusLabel.innerHTML = '<span style="color:#00ff88;"><i class="fa-solid fa-circle-check"></i> ESTADO: TURNO ABIERTO & EN LÍNEA</span>';
+      cajeroActiveName.textContent = `Cajero: ${k.cajeroActual || 'Activo'}`;
+      cajaCalculatedBalance.textContent = formatMoney(k.saldoEnCajaCalculado);
+      if (cajaSubtext) cajaSubtext.textContent = 'Turno en curso | Ventas activas en tiempo real';
+      cajaBanner.style.borderColor = 'rgba(0, 255, 136, 0.4)';
+      cajaBanner.style.background = 'linear-gradient(135deg, rgba(0, 255, 136, 0.08), rgba(15, 23, 42, 0.9))';
+      cajaBanner.style.boxShadow = '0 0 20px rgba(0, 255, 136, 0.15)';
+      if (syncStatusText) syncStatusText.textContent = 'POS En Línea (Activo)';
+    } else if (k.posOnline && !k.cajaAbierta) {
+      // 2. POS ABIERTO PERO ESPERANDO APERTURA DE CAJA
+      cajaStatusLabel.innerHTML = '<span style="color:#ffd700;"><i class="fa-solid fa-clock"></i> POS EN LÍNEA (ESPERANDO APERTURA)</span>';
+      cajeroActiveName.textContent = `Usuario: ${k.cajeroActual || 'Esperando inicio de turno'}`;
+      cajaCalculatedBalance.textContent = '$0';
+      if (cajaSubtext) cajaSubtext.textContent = 'Aplicación ejecutándose | Caja en espera de apertura';
+      cajaBanner.style.borderColor = 'rgba(255, 215, 0, 0.4)';
+      cajaBanner.style.background = 'linear-gradient(135deg, rgba(255, 215, 0, 0.08), rgba(15, 23, 42, 0.9))';
+      cajaBanner.style.boxShadow = '0 0 20px rgba(255, 215, 0, 0.15)';
+      if (syncStatusText) syncStatusText.textContent = 'POS En Línea (Esperando Apertura)';
+    } else {
+      // 3. PROGRAMA CERRADO O CAJA BLOQUEADA
+      cajaStatusLabel.innerHTML = '<span style="color:#ff3366; animation: pulse 1.5s infinite;"><i class="fa-solid fa-lock"></i> 🔒 PROGRAMA CERRADO - CAJA BLOQUEADA</span>';
+      cajeroActiveName.textContent = 'Terminal Desconectada / Cerrada';
+      cajaCalculatedBalance.textContent = formatMoney(k.saldoEnCajaCalculado);
+      if (cajaSubtext) cajaSubtext.textContent = 'La aplicación de caja física no está en ejecución';
+      cajaBanner.style.borderColor = 'rgba(255, 51, 102, 0.5)';
+      cajaBanner.style.background = 'linear-gradient(135deg, rgba(255, 51, 102, 0.12), rgba(15, 23, 42, 0.95))';
+      cajaBanner.style.boxShadow = '0 0 25px rgba(255, 51, 102, 0.25)';
+      if (syncStatusText) syncStatusText.textContent = 'Desconectado / Caja Bloqueada';
+    }
   }
 
-  // KPIs
-  document.getElementById('kpiTotalSales').textContent = formatMoney(k.totalVentasHoy);
-  document.getElementById('kpiTxCount').textContent = `${k.totalTransaccionesHoy || 0} transacciones`;
-  document.getElementById('kpiNetProfit').textContent = formatMoney(k.balanceNetoHoy);
-  document.getElementById('kpiCash').textContent = formatMoney(k.efectivoHoy);
-  document.getElementById('kpiTransfer').textContent = formatMoney(k.transferenciaHoy);
-  document.getElementById('kpiExpenses').textContent = formatMoney(k.totalGastosHoy);
-  document.getElementById('kpiActiveTables').textContent = k.mesasActivasCount || 0;
-  document.getElementById('kpiTablesTotal').textContent = `${formatMoney(k.totalEnMesas)} en consumo`;
+  // Actualizar KPIs de tarjetas con animación Count-Up
+  const totalSalesVal = k.totalVentasHoy || k.totalSales || 0;
+  const netProfitVal = k.balanceNetoHoy || k.gananciaNetaHoy || 0;
+  const cashVal = k.efectivoHoy || k.cash || 0;
+  const transferVal = k.transferenciaHoy || k.transferenciasHoy || 0;
+  const expensesVal = k.totalGastosHoy || k.gastosHoy || 0;
+  const txCountVal = k.totalTransaccionesHoy || k.cantidadVentasHoy || (data.ventasHoy && data.ventasHoy.length) || 0;
+  const activeTablesVal = (data.mesasActivas || []).length;
+  const tablesTotalVal = k.totalEnMesas || k.totalMesasActivas || 0;
 
-  // Badge en pestaña de mesas
+  animateCounter('kpiTotalSales', totalSalesVal, true);
+  animateCounter('kpiNetProfit', netProfitVal, true);
+  animateCounter('kpiCash', cashVal, true);
+  animateCounter('kpiTransfer', transferVal, true);
+  animateCounter('kpiExpenses', expensesVal, true);
+  animateCounter('kpiActiveTables', activeTablesVal, false);
+
+  const kpiTxCount = document.getElementById('kpiTxCount');
+  if (kpiTxCount) kpiTxCount.textContent = `${txCountVal} transacciones hoy`;
+
+  const kpiTablesTotal = document.getElementById('kpiTablesTotal');
+  if (kpiTablesTotal) kpiTablesTotal.textContent = `${formatMoney(tablesTotalVal)} en consumo`;
+
+  // Badges de mesas en tabs desktop y mobile
   const tabBadge = document.getElementById('tabTablesCount');
-  if (tabBadge) tabBadge.textContent = k.mesasActivasCount || 0;
+  const mTabBadge = document.getElementById('mTabTablesCount');
+  if (tabBadge) tabBadge.textContent = activeTablesVal;
+  if (mTabBadge) mTabBadge.textContent = activeTablesVal;
 
   // Gráfico de Barras por Hora
   renderHourlyChart(data.ventasPorHora || []);

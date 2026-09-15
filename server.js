@@ -130,20 +130,25 @@ loadDB();
 // Helper: Normalizar formato de fecha a YYYY-MM-DD para comparaciones universales
 function normalizeDateStr(dateInput) {
   if (!dateInput) return null;
+  if (dateInput instanceof Date) {
+    const year = dateInput.getFullYear();
+    const month = String(dateInput.getMonth() + 1).padStart(2, '0');
+    const day = String(dateInput.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
   const str = String(dateInput).trim();
 
   // Si ya es YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-    return str.slice(0, 10);
+  const mISO = str.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (mISO) {
+    return `${mISO[1]}-${mISO[2].padStart(2, '0')}-${mISO[3].padStart(2, '0')}`;
   }
 
-  // Si es DD/MM/YYYY
-  const parts = str.split('/');
-  if (parts.length === 3) {
-    const day = parts[0].padStart(2, '0');
-    const month = parts[1].padStart(2, '0');
-    const year = parts[2].length === 4 ? parts[2] : `20${parts[2]}`;
-    return `${year}-${month}-${day}`;
+  // Si es DD/MM/YYYY o DD-MM-YYYY
+  const mDMY = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (mDMY) {
+    const year = mDMY[3].length === 2 ? `20${mDMY[3]}` : mDMY[3];
+    return `${year}-${mDMY[2].padStart(2, '0')}-${mDMY[1].padStart(2, '0')}`;
   }
 
   // Si es timestamp numérico o ISO
@@ -157,7 +162,38 @@ function normalizeDateStr(dateInput) {
     }
   } catch (e) {}
 
-  return str;
+  return str.slice(0, 10);
+}
+
+// Helper: Día de Negocio Gastrobar (antes de las 06:00 AM cuenta como el día anterior)
+function getBusinessDateStr(dateInput = new Date()) {
+  const d = new Date(dateInput);
+  if (d.getHours() < 6) {
+    d.setDate(d.getDate() - 1);
+  }
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Helper: Timestamp numérico seguro para ordenamiento
+function parseTimestampOrDate(item) {
+  if (!item) return 0;
+  if (item.timestamp) {
+    const t = new Date(item.timestamp).getTime();
+    if (!isNaN(t)) return t;
+  }
+  const dateNorm = normalizeDateStr(item.fecha);
+  if (dateNorm) {
+    const hora = item.hora || '00:00:00';
+    const t = new Date(`${dateNorm}T${hora}`).getTime();
+    if (!isNaN(t)) return t;
+    const t2 = new Date(`${dateNorm} ${hora}`).getTime();
+    if (!isNaN(t2)) return t2;
+  }
+  if (typeof item.id === 'number') return item.id;
+  return 0;
 }
 
 // Helper: Registrar un movimiento unificado
@@ -165,14 +201,14 @@ function registrarMovimiento(tipo, titulo, detalle, monto, extra = {}) {
   const ahora = new Date();
   const mov = {
     id: `mov_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-    timestamp: ahora.toISOString(),
+    timestamp: extra.timestamp || ahora.toISOString(),
     fecha: extra.fecha || ahora.toLocaleDateString('es-CO'),
     hora: extra.hora || ahora.toLocaleTimeString('es-CO'),
-    tipo, // 'venta', 'gasto', 'ingreso', 'apertura', 'cierre', 'mesa', 'inventario'
+    tipo, // 'venta', 'gasto', 'ingreso', 'apertura', 'cierre', 'mesa', 'inventario', 'aviso'
     titulo,
     detalle,
     monto: Number(monto) || 0,
-    usuario: extra.usuario || extra.cajero || 'Sistema',
+    usuario: extra.usuario || extra.cajero || extra.responsable || 'Sistema',
     mesa: extra.mesa || null,
     metodoPago: extra.metodoPago || null,
     refId: extra.refId || null,
@@ -186,6 +222,93 @@ function registrarMovimiento(tipo, titulo, detalle, monto, extra = {}) {
   saveDB();
   return mov;
 }
+
+// Auto-recuperación de movimientos si la base de datos se inicia vacía o tras sincronización
+function ensureMovementsIntegrity() {
+  if (!Array.isArray(db.movimientos)) db.movimientos = [];
+  const existingRefIds = new Set(db.movimientos.map(m => m.refId || m.id));
+
+  // 1. Respaldar ventas en movimientos
+  if (Array.isArray(db.ventas)) {
+    db.ventas.forEach(v => {
+      if (v.id && !existingRefIds.has(v.id)) {
+        const itemsTxt = Array.isArray(v.items) ? v.items.map(i => `${i.cantidad || i.qty || 1}x ${i.nombre || i.name || 'Prod'}`).join(', ') : 'Venta';
+        db.movimientos.push({
+          id: `mov_v_${v.id}`,
+          refId: v.id,
+          timestamp: v.timestamp || new Date().toISOString(),
+          fecha: v.fecha || new Date().toLocaleDateString('es-CO'),
+          hora: v.hora || new Date().toLocaleTimeString('es-CO'),
+          tipo: 'venta',
+          titulo: `Venta Registrada #${v.id} - ${v.mesa || 'Caja'}`,
+          detalle: `Total: $${(Number(v.monto) || 0).toLocaleString('es-CO')} | ${v.metodoPago || 'Efectivo'} | ${itemsTxt}`,
+          monto: Number(v.monto) || 0,
+          usuario: v.cajero || 'Cajero',
+          mesa: v.mesa || null,
+          metodoPago: v.metodoPago || 'Efectivo',
+          extra: v
+        });
+        existingRefIds.add(v.id);
+      }
+    });
+  }
+
+  // 2. Respaldar contabilidad en movimientos
+  if (Array.isArray(db.contabilidad)) {
+    db.contabilidad.forEach(c => {
+      const cId = c.id || `${c.fecha}_${c.hora}_${c.monto}`;
+      if (!existingRefIds.has(cId)) {
+        const isIngreso = c.tipo === 'ingreso' || c.type === 'income';
+        db.movimientos.push({
+          id: `mov_c_${cId}`,
+          refId: cId,
+          timestamp: c.timestamp || new Date().toISOString(),
+          fecha: c.fecha || new Date().toLocaleDateString('es-CO'),
+          hora: c.hora || new Date().toLocaleTimeString('es-CO'),
+          tipo: isIngreso ? 'ingreso' : 'gasto',
+          titulo: `${isIngreso ? 'Ingreso Extra' : 'Gasto Registrado'}: ${c.concepto || c.concept || 'Gasto Operativo'}`,
+          detalle: `Monto: $${(Number(c.monto || c.amount) || 0).toLocaleString('es-CO')} | Resp: ${c.responsable || c.cajero || 'Admin'}`,
+          monto: Number(c.monto || c.amount) || 0,
+          usuario: c.responsable || c.cajero || 'Admin',
+          extra: c
+        });
+        existingRefIds.add(cId);
+      }
+    });
+  }
+
+  // 3. Respaldar sesiones en movimientos
+  if (Array.isArray(db.sesiones_caja)) {
+    db.sesiones_caja.forEach(s => {
+      const sId = s.id || `ses_${s.fecha}_${s.horaApertura || ''}`;
+      if (!existingRefIds.has(sId)) {
+        db.movimientos.push({
+          id: `mov_s_${sId}`,
+          refId: sId,
+          timestamp: s.timestamp || new Date().toISOString(),
+          fecha: s.fecha || new Date().toLocaleDateString('es-CO'),
+          hora: s.horaApertura || s.hora || new Date().toLocaleTimeString('es-CO'),
+          tipo: 'apertura',
+          titulo: `Apertura de Caja - Turno Iniciado`,
+          detalle: `Cajero: ${s.cajero || 'Cajero'} | Base Inicial: $${(Number(s.montoInicial) || 0).toLocaleString('es-CO')}`,
+          monto: Number(s.montoInicial) || 0,
+          usuario: s.cajero || 'Cajero',
+          extra: s
+        });
+        existingRefIds.add(sId);
+      }
+    });
+  }
+
+  // Ordenar movimientos cronológicamente (más recientes primero)
+  db.movimientos.sort((a, b) => parseTimestampOrDate(b) - parseTimestampOrDate(a));
+  if (db.movimientos.length > 5000) {
+    db.movimientos = db.movimientos.slice(0, 5000);
+  }
+}
+
+// Ejecutar al cargar la DB
+ensureMovementsIntegrity();
 
 // Middleware de autenticación opcional por Token
 function checkAuthToken(req, res, next) {
@@ -270,13 +393,25 @@ app.get('/api/health', (req, res) => {
 // Resumen analítico general para el Dashboard
 app.get('/api/overview', (req, res) => {
   const hoyISO = normalizeDateStr(new Date());
+  const businessDayISO = getBusinessDateStr(new Date());
 
-  const isToday = (fechaStr, timestamp) => {
-    const fNorm = normalizeDateStr(fechaStr) || normalizeDateStr(timestamp);
-    return fNorm === hoyISO;
+  const ultimaSesion = db.sesiones_caja.length > 0 ? db.sesiones_caja[db.sesiones_caja.length - 1] : null;
+  const cajaAbierta = ultimaSesion && (!ultimaSesion.estado || ultimaSesion.estado === 'abierta' || !ultimaSesion.horaCierre);
+
+  const isCurrentShiftOrToday = (item) => {
+    if (!item) return false;
+    const fNorm = normalizeDateStr(item.fecha) || normalizeDateStr(item.timestamp);
+    if (fNorm === hoyISO || fNorm === businessDayISO) return true;
+    // Si hay una sesión de caja abierta hoy
+    if (cajaAbierta && ultimaSesion && ultimaSesion.timestamp) {
+      if (item.timestamp && new Date(item.timestamp) >= new Date(ultimaSesion.timestamp)) {
+        return true;
+      }
+    }
+    return false;
   };
 
-  const ventasHoy = db.ventas.filter(v => isToday(v.fecha, v.timestamp));
+  const ventasHoy = db.ventas.filter(v => isCurrentShiftOrToday(v));
   
   let totalVentasHoy = 0;
   let efectivoHoy = 0;
@@ -288,11 +423,12 @@ app.get('/api/overview', (req, res) => {
     const monto = Number(v.monto) || 0;
     totalVentasHoy += monto;
 
-    if (v.metodoPago === 'efectivo') {
+    const mp = String(v.metodoPago || '').toLowerCase();
+    if (mp === 'efectivo') {
       efectivoHoy += monto;
-    } else if (v.metodoPago === 'transferencia') {
+    } else if (mp === 'transferencia' || mp === 'nequi' || mp === 'daviplata' || mp === 'tarjeta') {
       transferenciaHoy += monto;
-    } else if (v.metodoPago === 'mixto') {
+    } else if (mp === 'mixto') {
       efectivoHoy += Number(v.montoEfectivo) || 0;
       transferenciaHoy += Number(v.montoTransferencia) || 0;
     } else {
@@ -320,15 +456,12 @@ app.get('/api/overview', (req, res) => {
     }
   });
 
-  const gastosHoy = db.contabilidad.filter(g => (g.tipo === 'gasto' || g.type === 'expense') && isToday(g.fecha, g.timestamp));
+  const gastosHoy = db.contabilidad.filter(g => (g.tipo === 'gasto' || g.type === 'expense') && isCurrentShiftOrToday(g));
   const totalGastosHoy = gastosHoy.reduce((acc, g) => acc + (Number(g.monto || g.amount) || 0), 0);
-
-  const ultimaSesion = db.sesiones_caja.length > 0 ? db.sesiones_caja[db.sesiones_caja.length - 1] : null;
-  const cajaAbierta = ultimaSesion && (!ultimaSesion.estado || ultimaSesion.estado === 'abierta' || !ultimaSesion.horaCierre);
 
   const mesasActivas = db.ventas_pendientes || [];
   const totalEnMesas = mesasActivas.reduce((acc, m) => {
-    const tot = Number(m.total) || (Array.isArray(m.items) ? m.items.reduce((sum, i) => sum + ((Number(i.price) || 0) * (Number(i.qty) || 1)), 0) : 0);
+    const tot = Number(m.total || m.monto) || (Array.isArray(m.items) ? m.items.reduce((sum, i) => sum + ((Number(i.price || i.precio) || 0) * (Number(i.qty || i.cantidad) || 1)), 0) : 0);
     return acc + tot;
   }, 0);
 
@@ -359,23 +492,37 @@ app.get('/api/overview', (req, res) => {
 
   const cajeroEnTurno = isCajaEfectivamenteAbierta ? (db.pos_status?.cajeroActual || ultimaSesion?.cajero || 'Cajero') : (posOnline ? 'Esperando inicio de turno' : 'Sin turno / Terminal cerrada');
 
+  const baseInicial = Number(ultimaSesion?.montoInicial) || 0;
+  const saldoCalculado = Math.max(0, baseInicial + efectivoHoy - totalGastosHoy);
+
   res.json({
     kpis: {
       totalVentasHoy,
+      totalSales: totalVentasHoy,
       efectivoHoy,
+      cash: efectivoHoy,
       transferenciaHoy,
+      transferenciasHoy: transferenciaHoy,
+      transfer: transferenciaHoy,
       totalGastosHoy,
+      gastosHoy: totalGastosHoy,
+      expenses: totalGastosHoy,
       balanceNetoHoy: totalVentasHoy - totalGastosHoy,
+      gananciaNetaHoy: totalVentasHoy - totalGastosHoy,
+      netProfit: totalVentasHoy - totalGastosHoy,
       totalTransaccionesHoy: ventasHoy.length,
+      cantidadVentasHoy: ventasHoy.length,
+      txCount: ventasHoy.length,
       ticketPromedioHoy: ventasHoy.length > 0 ? Math.round(totalVentasHoy / ventasHoy.length) : 0,
       mesasActivasCount: mesasActivas.length,
+      totalMesasActivas: totalEnMesas,
       totalEnMesas,
       cajaAbierta: isCajaEfectivamenteAbierta,
       posOnline: !!posOnline,
       isBloqueado: !!isBloqueado,
       estadoTextoPrincipal,
       cajeroActual: cajeroEnTurno,
-      saldoEnCajaCalculado: (Number(ultimaSesion?.montoInicial) || 0) + efectivoHoy - totalGastosHoy
+      saldoEnCajaCalculado: saldoCalculado
     },
     posStatus: {
       online: !!posOnline,
@@ -402,8 +549,10 @@ app.get('/api/overview', (req, res) => {
 
 app.get('/api/movements', (req, res) => {
   let { tipo, fecha, search, limit, offset } = req.query;
-  limit = parseInt(limit, 10) || 50;
+  limit = parseInt(limit, 10) || 100;
   offset = parseInt(offset, 10) || 0;
+
+  ensureMovementsIntegrity();
 
   let filtrados = [...db.movimientos];
 
@@ -422,9 +571,13 @@ app.get('/api/movements', (req, res) => {
       (m.titulo && m.titulo.toLowerCase().includes(s)) ||
       (m.detalle && m.detalle.toLowerCase().includes(s)) ||
       (m.usuario && m.usuario.toLowerCase().includes(s)) ||
-      (m.mesa && m.mesa.toLowerCase().includes(s))
+      (m.mesa && m.mesa.toLowerCase().includes(s)) ||
+      (m.metodoPago && m.metodoPago.toLowerCase().includes(s)) ||
+      (m.monto && String(m.monto).includes(s))
     );
   }
+
+  filtrados.sort((a, b) => parseTimestampOrDate(b) - parseTimestampOrDate(a));
 
   const total = filtrados.length;
   const paginados = filtrados.slice(offset, offset + limit);
@@ -443,7 +596,7 @@ app.get('/api/movements', (req, res) => {
 
 app.get('/api/sales', (req, res) => {
   let { fecha, search, limit, offset } = req.query;
-  limit = parseInt(limit, 10) || 50;
+  limit = parseInt(limit, 10) || 100;
   offset = parseInt(offset, 10) || 0;
 
   let list = [...db.ventas];
@@ -459,11 +612,13 @@ app.get('/api/sales', (req, res) => {
       (v.cajero && v.cajero.toLowerCase().includes(s)) ||
       (v.mesa && v.mesa.toLowerCase().includes(s)) ||
       (v.metodoPago && v.metodoPago.toLowerCase().includes(s)) ||
-      (v.id && String(v.id).toLowerCase().includes(s))
+      (v.id && String(v.id).toLowerCase().includes(s)) ||
+      (v.monto && String(v.monto).includes(s)) ||
+      (Array.isArray(v.items) && v.items.some(i => (i.nombre || i.name || '').toLowerCase().includes(s)))
     );
   }
 
-  list.sort((a, b) => new Date(b.timestamp || b.fecha) - new Date(a.timestamp || a.fecha));
+  list.sort((a, b) => parseTimestampOrDate(b) - parseTimestampOrDate(a));
 
   res.json({
     total: list.length,
