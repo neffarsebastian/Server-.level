@@ -90,7 +90,8 @@ const defaultDB = {
   ventas_pendientes: [],
   productos: [...DEFAULT_PRODUCTS],
   inventario_historial: [],
-  movimientos: [] // Timeline unificado de auditoría
+  movimientos: [], // Timeline unificado de auditoría
+  live_caja_state: null
 };
 
 let db = { ...defaultDB };
@@ -396,7 +397,8 @@ app.get('/api/overview', (req, res) => {
   const businessDayISO = getBusinessDateStr(new Date());
 
   const ultimaSesion = db.sesiones_caja.length > 0 ? db.sesiones_caja[db.sesiones_caja.length - 1] : null;
-  const cajaAbierta = ultimaSesion && (!ultimaSesion.estado || ultimaSesion.estado === 'abierta' || !ultimaSesion.horaCierre);
+  const liveState = db.live_caja_state;
+  const cajaAbierta = (liveState && liveState.abierta) || (ultimaSesion && (!ultimaSesion.estado || ultimaSesion.estado === 'abierta' || !ultimaSesion.horaCierre));
 
   const isCurrentShiftOrToday = (item) => {
     if (!item) return false;
@@ -416,48 +418,91 @@ app.get('/api/overview', (req, res) => {
   let totalVentasHoy = 0;
   let efectivoHoy = 0;
   let transferenciaHoy = 0;
+  let totalGastosHoy = 0;
+  let saldoCalculado = 0;
+  let totalTransaccionesHoy = 0;
   const ventasPorHora = Array(24).fill(0);
   const conteoProductos = {};
 
-  ventasHoy.forEach(v => {
-    const monto = Number(v.monto) || 0;
-    totalVentasHoy += monto;
+  // Si hay estado en vivo transmitido desde la caja física
+  if (liveState && liveState.abierta) {
+    totalVentasHoy = Number(liveState.ventasTotal) || 0;
+    efectivoHoy = Number(liveState.ventasEfectivo) || 0;
+    transferenciaHoy = Number(liveState.ventasTransferencia) || 0;
+    totalGastosHoy = Number(liveState.gastosTotal) || 0;
+    saldoCalculado = Number(liveState.saldoActual) !== undefined && !isNaN(Number(liveState.saldoActual)) 
+      ? Number(liveState.saldoActual) 
+      : Math.max(0, (Number(liveState.montoInicial) || 0) + efectivoHoy - totalGastosHoy);
+    
+    const txs = Array.isArray(liveState.transacciones) ? liveState.transacciones : ventasHoy;
+    totalTransaccionesHoy = txs.length;
 
-    const mp = String(v.metodoPago || '').toLowerCase();
-    if (mp === 'efectivo') {
-      efectivoHoy += monto;
-    } else if (mp === 'transferencia' || mp === 'nequi' || mp === 'daviplata' || mp === 'tarjeta') {
-      transferenciaHoy += monto;
-    } else if (mp === 'mixto') {
-      efectivoHoy += Number(v.montoEfectivo) || 0;
-      transferenciaHoy += Number(v.montoTransferencia) || 0;
-    } else {
-      efectivoHoy += monto;
-    }
-
-    if (v.hora) {
-      const horaPart = parseInt(String(v.hora).split(':')[0], 10);
-      if (!isNaN(horaPart) && horaPart >= 0 && horaPart < 24) {
-        ventasPorHora[horaPart] += monto;
-      }
-    }
-
-    if (Array.isArray(v.items)) {
-      v.items.forEach(it => {
-        const nom = it.nombre || it.name || 'Producto';
-        const qty = Number(it.cantidad || it.qty) || 1;
-        const sub = Number(it.subtotal) || (Number(it.precioUnitario || it.price || 0) * qty);
-        if (!conteoProductos[nom]) {
-          conteoProductos[nom] = { nombre: nom, cantidad: 0, total: 0 };
+    txs.forEach(v => {
+      const monto = Number(v.monto || v.total) || 0;
+      if (v.hora) {
+        const horaPart = parseInt(String(v.hora).split(':')[0], 10);
+        if (!isNaN(horaPart) && horaPart >= 0 && horaPart < 24) {
+          ventasPorHora[horaPart] += monto;
         }
-        conteoProductos[nom].cantidad += qty;
-        conteoProductos[nom].total += sub;
-      });
-    }
-  });
+      }
+      if (Array.isArray(v.items)) {
+        v.items.forEach(it => {
+          const nom = it.nombre || it.name || 'Producto';
+          const qty = Number(it.cantidad || it.qty) || 1;
+          const sub = Number(it.subtotal) || (Number(it.precioUnitario || it.price || 0) * qty);
+          if (!conteoProductos[nom]) {
+            conteoProductos[nom] = { nombre: nom, cantidad: 0, total: 0 };
+          }
+          conteoProductos[nom].cantidad += qty;
+          conteoProductos[nom].total += sub;
+        });
+      }
+    });
+  } else {
+    // Cálculo histórico a partir de registros si no hay caja física abierta transmitiendo
+    ventasHoy.forEach(v => {
+      const monto = Number(v.monto) || 0;
+      totalVentasHoy += monto;
 
-  const gastosHoy = db.contabilidad.filter(g => (g.tipo === 'gasto' || g.type === 'expense') && isCurrentShiftOrToday(g));
-  const totalGastosHoy = gastosHoy.reduce((acc, g) => acc + (Number(g.monto || g.amount) || 0), 0);
+      const mp = String(v.metodoPago || '').toLowerCase();
+      if (mp === 'efectivo') {
+        efectivoHoy += monto;
+      } else if (mp === 'transferencia' || mp === 'nequi' || mp === 'daviplata' || mp === 'tarjeta') {
+        transferenciaHoy += monto;
+      } else if (mp === 'mixto') {
+        efectivoHoy += Number(v.montoEfectivo) || 0;
+        transferenciaHoy += Number(v.montoTransferencia) || 0;
+      } else {
+        efectivoHoy += monto;
+      }
+
+      if (v.hora) {
+        const horaPart = parseInt(String(v.hora).split(':')[0], 10);
+        if (!isNaN(horaPart) && horaPart >= 0 && horaPart < 24) {
+          ventasPorHora[horaPart] += monto;
+        }
+      }
+
+      if (Array.isArray(v.items)) {
+        v.items.forEach(it => {
+          const nom = it.nombre || it.name || 'Producto';
+          const qty = Number(it.cantidad || it.qty) || 1;
+          const sub = Number(it.subtotal) || (Number(it.precioUnitario || it.price || 0) * qty);
+          if (!conteoProductos[nom]) {
+            conteoProductos[nom] = { nombre: nom, cantidad: 0, total: 0 };
+          }
+          conteoProductos[nom].cantidad += qty;
+          conteoProductos[nom].total += sub;
+        });
+      }
+    });
+
+    const gastosHoy = db.contabilidad.filter(g => (g.tipo === 'gasto' || g.type === 'expense') && isCurrentShiftOrToday(g));
+    totalGastosHoy = gastosHoy.reduce((acc, g) => acc + (Number(g.monto || g.amount) || 0), 0);
+    const baseInicial = Number(ultimaSesion?.montoInicial) || 0;
+    saldoCalculado = Math.max(0, baseInicial + efectivoHoy - totalGastosHoy);
+    totalTransaccionesHoy = ventasHoy.length;
+  }
 
   const mesasActivas = db.ventas_pendientes || [];
   const totalEnMesas = mesasActivas.reduce((acc, m) => {
@@ -479,7 +524,7 @@ app.get('/api/overview', (req, res) => {
     posOnline = diffSeconds < 45 && !db.pos_status.appClosed;
   }
 
-  const isCajaEfectivamenteAbierta = !!(posOnline && db.pos_status?.cajaAbierta);
+  const isCajaEfectivamenteAbierta = !!(posOnline && (db.pos_status?.cajaAbierta || (liveState && liveState.abierta)));
   const isProgramaCerrado = !posOnline || db.pos_status?.appClosed;
   const isBloqueado = isProgramaCerrado || !isCajaEfectivamenteAbierta;
 
@@ -490,10 +535,7 @@ app.get('/api/overview', (req, res) => {
     estadoTextoPrincipal = 'POS EN LÍNEA - ESPERANDO APERTURA';
   }
 
-  const cajeroEnTurno = isCajaEfectivamenteAbierta ? (db.pos_status?.cajeroActual || ultimaSesion?.cajero || 'Cajero') : (posOnline ? 'Esperando inicio de turno' : 'Sin turno / Terminal cerrada');
-
-  const baseInicial = Number(ultimaSesion?.montoInicial) || 0;
-  const saldoCalculado = Math.max(0, baseInicial + efectivoHoy - totalGastosHoy);
+  const cajeroEnTurno = isCajaEfectivamenteAbierta ? (liveState?.cajero || db.pos_status?.cajeroActual || ultimaSesion?.cajero || 'Cajero') : (posOnline ? 'Esperando inicio de turno' : 'Sin turno / Terminal cerrada');
 
   res.json({
     kpis: {
@@ -510,10 +552,10 @@ app.get('/api/overview', (req, res) => {
       balanceNetoHoy: totalVentasHoy - totalGastosHoy,
       gananciaNetaHoy: totalVentasHoy - totalGastosHoy,
       netProfit: totalVentasHoy - totalGastosHoy,
-      totalTransaccionesHoy: ventasHoy.length,
-      cantidadVentasHoy: ventasHoy.length,
-      txCount: ventasHoy.length,
-      ticketPromedioHoy: ventasHoy.length > 0 ? Math.round(totalVentasHoy / ventasHoy.length) : 0,
+      totalTransaccionesHoy,
+      cantidadVentasHoy: totalTransaccionesHoy,
+      txCount: totalTransaccionesHoy,
+      ticketPromedioHoy: totalTransaccionesHoy > 0 ? Math.round(totalVentasHoy / totalTransaccionesHoy) : 0,
       mesasActivasCount: mesasActivas.length,
       totalMesasActivas: totalEnMesas,
       totalEnMesas,
@@ -533,7 +575,8 @@ app.get('/api/overview', (req, res) => {
       estadoTexto: estadoTextoPrincipal,
       lastHeartbeat: db.pos_status?.lastHeartbeat || null
     },
-    cajaSesion: ultimaSesion,
+    liveCajaState: liveState,
+    cajaSesion: liveState || ultimaSesion,
     mesasActivas,
     ventasPorHora,
     topProductos,
@@ -722,6 +765,10 @@ app.post('/api/sync/batch', checkAuthToken, (req, res) => {
       db.inventario_historial = Array.from(invMap.values());
     }
 
+    if (payload.cajaState) {
+      db.live_caja_state = payload.cajaState;
+    }
+
     db.info.ultima_sincronizacion = new Date().toISOString();
     saveDB();
 
@@ -904,21 +951,28 @@ app.post('/api/sync/inventory', checkAuthToken, (req, res) => {
 // Latido en vivo del Sistema POS Físico (Heartbeat)
 app.post('/api/sync/heartbeat', checkAuthToken, (req, res) => {
   try {
-    const { cajaAbierta, cajero, estado } = req.body;
+    const { cajaAbierta, cajero, estado, cajaState } = req.body;
+    if (cajaState) {
+      db.live_caja_state = cajaState;
+    }
+
+    const isAbierta = !!(cajaAbierta || (cajaState && cajaState.abierta));
+    const activeCajero = cajero || (cajaState && cajaState.cajero) || (isAbierta ? 'Activo' : 'Ninguno');
+
     db.pos_status = {
       online: true,
       appClosed: false,
-      cajaBloqueada: !cajaAbierta,
-      cajaAbierta: !!cajaAbierta,
-      cajeroActual: cajero || 'Activo',
+      cajaBloqueada: !isAbierta,
+      cajaAbierta: isAbierta,
+      cajeroActual: activeCajero,
       lastHeartbeat: new Date().toISOString(),
-      estadoTexto: cajaAbierta ? 'EN LÍNEA (TURNO ABIERTO)' : 'POS EN LÍNEA (ESPERANDO APERTURA)'
+      estadoTexto: isAbierta ? 'EN LÍNEA (TURNO ABIERTO)' : 'POS EN LÍNEA (ESPERANDO APERTURA)'
     };
     db.info.ultima_sincronizacion = new Date().toISOString();
 
-    broadcastLiveEvent('pos_heartbeat', { pos_status: db.pos_status });
+    broadcastLiveEvent('pos_heartbeat', { pos_status: db.pos_status, live_caja_state: db.live_caja_state });
 
-    res.json({ success: true, status: db.pos_status });
+    res.json({ success: true, status: db.pos_status, live_caja_state: db.live_caja_state });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -927,7 +981,10 @@ app.post('/api/sync/heartbeat', checkAuthToken, (req, res) => {
 // Señal de Cierre/Salida de la Aplicación de Caja
 app.post('/api/sync/pos-exit', checkAuthToken, (req, res) => {
   try {
-    const { cajero, razon } = req.body;
+    const { cajero, razon, cajaState } = req.body;
+    if (cajaState) {
+      db.live_caja_state = cajaState;
+    }
     db.pos_status = {
       online: false,
       appClosed: true,
@@ -948,7 +1005,7 @@ app.post('/api/sync/pos-exit', checkAuthToken, (req, res) => {
 
     saveDB();
 
-    broadcastLiveEvent('pos_exit', { pos_status: db.pos_status });
+    broadcastLiveEvent('pos_exit', { pos_status: db.pos_status, live_caja_state: db.live_caja_state });
 
     res.json({ success: true, message: 'Estado de programa cerrado y bloqueado registrado' });
   } catch (err) {
