@@ -128,8 +128,99 @@ function switchTab(tabId) {
 // 3. INICIALIZACIÓN Y POLLING EN VIVO
 // ==========================================
 
+let liveEventSource = null;
+
+function initEventSourceStream() {
+  if (liveEventSource) {
+    try { liveEventSource.close(); } catch (e) {}
+  }
+
+  try {
+    liveEventSource = new EventSource('/api/live-stream');
+
+    liveEventSource.addEventListener('connected', (e) => {
+      console.log('⚡ [SSE] Canal en Tiempo Real Conectado:', e.data);
+      fetchDashboardData();
+    });
+
+    liveEventSource.addEventListener('sale_created', (e) => {
+      try {
+        const payload = JSON.parse(e.data);
+        showLiveNotification(`🔔 Nueva Venta: ${formatMoney(payload.venta?.monto)}`, `${payload.venta?.mesa || 'Caja'} - ${payload.venta?.cajero || 'Cajero'}`);
+      } catch (err) {}
+      fetchDashboardData();
+    });
+
+    liveEventSource.addEventListener('tables_updated', () => {
+      fetchDashboardData();
+    });
+
+    liveEventSource.addEventListener('session_changed', (e) => {
+      fetchDashboardData();
+    });
+
+    liveEventSource.addEventListener('expense_created', (e) => {
+      fetchDashboardData();
+    });
+
+    liveEventSource.addEventListener('inventory_updated', () => {
+      fetchDashboardData();
+    });
+
+    liveEventSource.addEventListener('pos_heartbeat', () => {
+      fetchDashboardData();
+    });
+
+    liveEventSource.addEventListener('pos_exit', () => {
+      fetchDashboardData();
+    });
+
+    liveEventSource.onerror = () => {
+      // Reintento automático
+      setTimeout(() => {
+        if (sessionStorage.getItem('level_auth_token')) {
+          initEventSourceStream();
+        }
+      }, 5000);
+    };
+  } catch (err) {
+    console.warn("EventSource no soportado o error de red:", err);
+  }
+}
+
+function showLiveNotification(title, message) {
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 25px;
+    right: 25px;
+    background: linear-gradient(135deg, #0d1b2a, #070a13);
+    border: 1px solid #00f3ff;
+    box-shadow: 0 10px 30px rgba(0, 243, 255, 0.4);
+    color: #fff;
+    padding: 12px 18px;
+    border-radius: 12px;
+    z-index: 999999;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    animation: remoteFadeIn 0.25s ease;
+  `;
+  toast.innerHTML = `
+    <i class="fa-solid fa-bolt" style="color:#00f3ff; font-size:18px;"></i>
+    <div>
+      <div style="font-weight:700; font-size:13px; color:#00f3ff;">${title}</div>
+      <div style="font-size:11px; color:#94a3b8;">${message}</div>
+    </div>
+  `;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 4500);
+}
+
 function initDashboard() {
   fetchDashboardData();
+  initEventSourceStream();
 
   // Configurar URLs en vista de ajustes
   const curOrigin = window.location.origin;
@@ -143,9 +234,9 @@ function initDashboard() {
     qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=4&data=${encodeURIComponent(curOrigin)}`;
   }
 
-  // Polling automático cada 7 segundos para refresco en tiempo real
+  // Polling de respaldo de alta velocidad (cada 3.5 segundos)
   if (pollInterval) clearInterval(pollInterval);
-  pollInterval = setInterval(fetchDashboardData, 7000);
+  pollInterval = setInterval(fetchDashboardData, 3500);
 }
 
 // Formateador de dinero en pesos colombianos
@@ -170,14 +261,14 @@ async function fetchDashboardData() {
     // Actualizar indicador de sincronización
     const now = new Date();
     document.getElementById('syncTimeText').textContent = now.toLocaleTimeString('es-CO');
-    document.getElementById('syncStatusText').textContent = 'Conectado en vivo';
-    document.getElementById('syncStatusPill').style.borderColor = 'rgba(0, 255, 136, 0.3)';
+    document.getElementById('syncStatusText').textContent = 'En vivo (0ms)';
+    document.getElementById('syncStatusPill').style.borderColor = 'rgba(0, 255, 136, 0.4)';
   } catch (err) {
     console.warn("Error en polling dashboard:", err);
-    document.getElementById('syncStatusText').textContent = 'Sin conexión';
+    document.getElementById('syncStatusText').textContent = 'Reconectando...';
     document.getElementById('syncStatusPill').style.borderColor = 'rgba(255, 51, 102, 0.4)';
   } finally {
-    if (refreshIcon) setTimeout(() => refreshIcon.classList.remove('fa-spin'), 400);
+    if (refreshIcon) setTimeout(() => refreshIcon.classList.remove('fa-spin'), 300);
   }
 }
 

@@ -179,8 +179,47 @@ function getLocalIPs() {
 }
 
 // ==========================================
-// 1. ENDPOINTS DE ESTADO Y MÉTRICAS (OVERVIEW)
+// CANAL DE STREAMING EN TIEMPO REAL (SSE - ZERO DELAY)
 // ==========================================
+let sseClients = [];
+
+function broadcastLiveEvent(eventType, eventData = {}) {
+  const payload = `event: ${eventType}\ndata: ${JSON.stringify({ ...eventData, timestamp: new Date().toISOString() })}\n\n`;
+  sseClients.forEach(client => {
+    try {
+      client.res.write(payload);
+    } catch (e) {}
+  });
+}
+
+// Endpoint de Streaming SSE para el Dashboard
+app.get('/api/live-stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*'
+  });
+
+  const clientId = Date.now() + Math.random().toString(36).substr(2, 5);
+  const newClient = { id: clientId, res };
+  sseClients.push(newClient);
+
+  // Mensaje inicial de bienvenida
+  res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', pos_status: db.pos_status })}\n\n`);
+
+  // Ping periódico cada 15 segundos para mantener el canal abierto
+  const pingTimer = setInterval(() => {
+    try {
+      res.write(`event: ping\ndata: ${Date.now()}\n\n`);
+    } catch (e) {}
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(pingTimer);
+    sseClients = sseClients.filter(c => c.id !== clientId);
+  });
+});
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -496,7 +535,14 @@ app.post('/api/sync/batch', checkAuthToken, (req, res) => {
       db.inventario_historial = Array.from(invMap.values());
     }
 
+    db.info.ultima_sincronizacion = new Date().toISOString();
     saveDB();
+
+    broadcastLiveEvent('batch_sync', {
+      ventas: db.ventas.length,
+      productos: db.productos.length,
+      mesas: db.ventas_pendientes.length
+    });
 
     res.json({
       success: true,
@@ -531,7 +577,7 @@ app.post('/api/sync/sale', checkAuthToken, (req, res) => {
     }
 
     const itemsTxt = Array.isArray(venta.items) ? venta.items.map(i => `${i.cantidad || i.qty}x ${i.nombre || i.name}`).join(', ') : '';
-    registrarMovimiento(
+    const mov = registrarMovimiento(
       'venta',
       `Venta #${venta.id} - ${venta.mesa || 'Caja'}`,
       `Total: $${(Number(venta.monto) || 0).toLocaleString('es-CO')} | ${venta.metodoPago || 'Efectivo'} | ${itemsTxt}`,
@@ -541,6 +587,9 @@ app.post('/api/sync/sale', checkAuthToken, (req, res) => {
 
     db.info.ultima_sincronizacion = new Date().toISOString();
     saveDB();
+
+    // Notificar instantáneamente a todos los dashboards conectados
+    broadcastLiveEvent('sale_created', { venta, movimiento: mov });
 
     res.json({ success: true, id: venta.id });
   } catch (err) {
@@ -556,26 +605,39 @@ app.post('/api/sync/session', checkAuthToken, (req, res) => {
 
     db.sesiones_caja.push(session);
     
+    let mov;
     if (session.tipo === 'apertura' || session.montoInicial !== undefined) {
-      registrarMovimiento(
+      mov = registrarMovimiento(
         'apertura',
         `Apertura de Caja - Turno Iniciado`,
         `Cajero: ${session.cajero || 'Cajero'} | Base Inicial: $${(Number(session.montoInicial) || 0).toLocaleString('es-CO')}`,
         session.montoInicial,
         session
       );
+      if (db.pos_status) {
+        db.pos_status.cajaBloqueada = false;
+        db.pos_status.cajaAbierta = true;
+        db.pos_status.cajeroActual = session.cajero || 'Cajero';
+      }
     } else if (session.tipo === 'cierre' || session.totalVentas !== undefined) {
-      registrarMovimiento(
+      mov = registrarMovimiento(
         'cierre',
         `Cierre de Caja - Turno Finalizado`,
         `Cajero: ${session.cajero || 'Cajero'} | Ventas: $${(Number(session.totalVentas) || 0).toLocaleString('es-CO')} | Saldo Final: $${(Number(session.saldoFinal || session.montoFinal) || 0).toLocaleString('es-CO')}`,
         session.totalVentas || 0,
         session
       );
+      if (db.pos_status) {
+        db.pos_status.cajaBloqueada = true;
+        db.pos_status.cajaAbierta = false;
+      }
     }
 
     db.info.ultima_sincronizacion = new Date().toISOString();
     saveDB();
+
+    broadcastLiveEvent('session_changed', { session, movimiento: mov, pos_status: db.pos_status });
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -588,7 +650,7 @@ app.post('/api/sync/expense', checkAuthToken, (req, res) => {
     const expense = req.body;
     db.contabilidad.push(expense);
 
-    registrarMovimiento(
+    const mov = registrarMovimiento(
       expense.tipo === 'ingreso' ? 'ingreso' : 'gasto',
       `${expense.tipo === 'ingreso' ? 'Ingreso Extra' : 'Gasto Registrado'}: ${expense.concepto || expense.concept || 'Gasto Operativo'}`,
       `Monto: $${(Number(expense.monto || expense.amount) || 0).toLocaleString('es-CO')} | Responsable: ${expense.responsable || expense.cajero || 'Admin'}`,
@@ -598,6 +660,9 @@ app.post('/api/sync/expense', checkAuthToken, (req, res) => {
 
     db.info.ultima_sincronizacion = new Date().toISOString();
     saveDB();
+
+    broadcastLiveEvent('expense_created', { expense, movimiento: mov });
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -612,6 +677,7 @@ app.post('/api/sync/tables', checkAuthToken, (req, res) => {
       db.ventas_pendientes = tables;
       db.info.ultima_sincronizacion = new Date().toISOString();
       saveDB();
+      broadcastLiveEvent('tables_updated', { tables: db.ventas_pendientes });
     }
     res.json({ success: true, count: db.ventas_pendientes.length });
   } catch (err) {
@@ -626,9 +692,10 @@ app.post('/api/sync/inventory', checkAuthToken, (req, res) => {
     if (Array.isArray(products)) {
       db.productos = products;
     }
+    let mov = null;
     if (movement) {
       db.inventario_historial.push(movement);
-      registrarMovimiento(
+      mov = registrarMovimiento(
         'inventario',
         `Ajuste de Stock: ${movement.concepto || 'Movimiento de Inventario'}`,
         `Producto ID: ${movement.producto_id} | Cantidad: ${movement.cantidad} | Tipo: ${movement.tipo}`,
@@ -638,6 +705,9 @@ app.post('/api/sync/inventory', checkAuthToken, (req, res) => {
     }
     db.info.ultima_sincronizacion = new Date().toISOString();
     saveDB();
+
+    broadcastLiveEvent('inventory_updated', { products: db.productos, movimiento: mov });
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -652,11 +722,15 @@ app.post('/api/sync/heartbeat', checkAuthToken, (req, res) => {
       online: true,
       appClosed: false,
       cajaBloqueada: !cajaAbierta,
+      cajaAbierta: !!cajaAbierta,
       cajeroActual: cajero || 'Activo',
       lastHeartbeat: new Date().toISOString(),
-      estadoTexto: cajaAbierta ? 'EN LÍNEA (ACTIVO)' : 'CAJA CERRADA / BLOQUEADA'
+      estadoTexto: cajaAbierta ? 'EN LÍNEA (TURNO ABIERTO)' : 'POS EN LÍNEA (ESPERANDO APERTURA)'
     };
     db.info.ultima_sincronizacion = new Date().toISOString();
+
+    broadcastLiveEvent('pos_heartbeat', { pos_status: db.pos_status });
+
     res.json({ success: true, status: db.pos_status });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -671,6 +745,7 @@ app.post('/api/sync/pos-exit', checkAuthToken, (req, res) => {
       online: false,
       appClosed: true,
       cajaBloqueada: true,
+      cajaAbierta: false,
       cajeroActual: cajero || 'Ninguno',
       lastHeartbeat: new Date().toISOString(),
       estadoTexto: 'PROGRAMA CERRADO - CAJA BLOQUEADA'
@@ -685,6 +760,9 @@ app.post('/api/sync/pos-exit', checkAuthToken, (req, res) => {
     );
 
     saveDB();
+
+    broadcastLiveEvent('pos_exit', { pos_status: db.pos_status });
+
     res.json({ success: true, message: 'Estado de programa cerrado y bloqueado registrado' });
   } catch (err) {
     res.status(500).json({ error: err.message });
