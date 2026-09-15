@@ -187,23 +187,34 @@ async function fetchDashboardData() {
 
 function renderOverview(data) {
   const k = data.kpis || {};
+  const posStatus = data.posStatus || {};
 
   // Caja Banner
   const cajaBanner = document.getElementById('cajaLiveBanner');
   const cajaStatusLabel = document.getElementById('cajaStatusLabel');
   const cajeroActiveName = document.getElementById('cajeroActiveName');
   const cajaCalculatedBalance = document.getElementById('cajaCalculatedBalance');
+  const cajaSubtext = document.getElementById('cajaSubtext');
+  const syncStatusText = document.getElementById('syncStatusText');
 
-  if (k.cajaAbierta) {
-    cajaStatusLabel.textContent = 'ESTADO: TURNO ABIERTO';
+  if (k.cajaAbierta && k.posOnline) {
+    cajaStatusLabel.innerHTML = '<span style="color:#00ff88;"><i class="fa-solid fa-circle-check"></i> ESTADO: TURNO ABIERTO & EN LÍNEA</span>';
     cajeroActiveName.textContent = `Cajero: ${k.cajeroActual || 'Activo'}`;
     cajaCalculatedBalance.textContent = formatMoney(k.saldoEnCajaCalculado);
+    if (cajaSubtext) cajaSubtext.textContent = 'Turno en curso | Saldo estimado en gaveta';
     cajaBanner.style.borderColor = 'rgba(0, 255, 136, 0.4)';
+    cajaBanner.style.background = 'linear-gradient(135deg, rgba(0, 255, 136, 0.08), rgba(15, 23, 42, 0.9))';
+    if (syncStatusText) syncStatusText.textContent = 'POS Conectado en vivo';
   } else {
-    cajaStatusLabel.textContent = 'ESTADO: CAJA CERRADA';
-    cajeroActiveName.textContent = 'Sin turno activo';
-    cajaCalculatedBalance.textContent = '$0';
-    cajaBanner.style.borderColor = 'rgba(255, 215, 0, 0.3)';
+    // PROGRAMA CERRADO / BLOQUEADO
+    cajaStatusLabel.innerHTML = '<span style="color:#ff3366; font-weight:800; letter-spacing:0.5px;"><i class="fa-solid fa-lock fa-bounce"></i> PROGRAMA CERRADO - CAJA BLOQUEADA</span>';
+    cajeroActiveName.textContent = k.posOnline ? 'Turno Finalizado (Bloqueado)' : 'Terminal Apagada / Fuera de Línea';
+    cajaCalculatedBalance.textContent = formatMoney(k.saldoEnCajaCalculado || 0);
+    if (cajaSubtext) cajaSubtext.innerHTML = '<span style="color:#f87171;"><i class="fa-solid fa-shield-halved"></i> Terminal física cerrada y bloqueada. Movimientos detenidos.</span>';
+    cajaBanner.style.borderColor = 'rgba(255, 51, 102, 0.7)';
+    cajaBanner.style.background = 'linear-gradient(135deg, rgba(255, 51, 102, 0.15), rgba(15, 23, 42, 0.95))';
+    cajaBanner.style.boxShadow = '0 0 25px rgba(255, 51, 102, 0.25)';
+    if (syncStatusText) syncStatusText.textContent = 'PROGRAMA CERRADO (BLOQUEADO)';
   }
 
   // KPIs

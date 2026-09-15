@@ -47,6 +47,14 @@ const defaultDB = {
     version: "2.0.0",
     creado_el: new Date().toISOString()
   },
+  pos_status: {
+    online: false,
+    appClosed: true,
+    cajaBloqueada: true,
+    cajeroActual: 'Ninguno',
+    lastHeartbeat: null,
+    estadoTexto: 'PROGRAMA CERRADO'
+  },
   ventas: [],
   sesiones_caja: [],
   historial_cierres: [],
@@ -259,6 +267,27 @@ app.get('/api/overview', (req, res) => {
 
   const productosBajoStock = db.productos.filter(p => typeof p.stock === 'number' && p.stock <= 5);
 
+  // Evaluar si el POS físico está abierto o cerrado/bloqueado
+  const nowMs = Date.now();
+  let posOnline = false;
+  if (db.pos_status && db.pos_status.lastHeartbeat) {
+    const diffSeconds = (nowMs - new Date(db.pos_status.lastHeartbeat).getTime()) / 1000;
+    posOnline = diffSeconds < 50 && !db.pos_status.appClosed;
+  }
+
+  const isCajaCerrada = !cajaAbierta;
+  const isProgramaCerrado = !posOnline || db.pos_status?.appClosed;
+  const isBloqueado = isCajaCerrada || isProgramaCerrado;
+
+  let estadoTextoPrincipal = 'EN LÍNEA (ACTIVO)';
+  if (isProgramaCerrado && isCajaCerrada) {
+    estadoTextoPrincipal = 'PROGRAMA CERRADO - CAJA BLOQUEADA';
+  } else if (isProgramaCerrado) {
+    estadoTextoPrincipal = 'PROGRAMA CERRADO / DESCONECTADO';
+  } else if (isCajaCerrada) {
+    estadoTextoPrincipal = 'CAJA CERRADA / BLOQUEADA';
+  }
+
   res.json({
     kpis: {
       totalVentasHoy,
@@ -271,8 +300,18 @@ app.get('/api/overview', (req, res) => {
       mesasActivasCount: mesasActivas.length,
       totalEnMesas,
       cajaAbierta: !!cajaAbierta,
+      posOnline: !!posOnline,
+      isBloqueado: !!isBloqueado,
+      estadoTextoPrincipal,
       cajeroActual: ultimaSesion ? (ultimaSesion.cajero || ultimaSesion.usuario || 'Activo') : 'Sin turno',
       saldoEnCajaCalculado: (Number(ultimaSesion?.montoInicial) || 0) + efectivoHoy - totalGastosHoy
+    },
+    posStatus: {
+      online: !!posOnline,
+      appClosed: !!db.pos_status?.appClosed,
+      cajaBloqueada: !!isBloqueado,
+      estadoTexto: estadoTextoPrincipal,
+      lastHeartbeat: db.pos_status?.lastHeartbeat || null
     },
     cajaSesion: ultimaSesion,
     mesasActivas,
@@ -598,6 +637,53 @@ app.post('/api/sync/inventory', checkAuthToken, (req, res) => {
     db.info.ultima_sincronizacion = new Date().toISOString();
     saveDB();
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Latido en vivo del Sistema POS Físico (Heartbeat)
+app.post('/api/sync/heartbeat', checkAuthToken, (req, res) => {
+  try {
+    const { cajaAbierta, cajero, estado } = req.body;
+    db.pos_status = {
+      online: true,
+      appClosed: false,
+      cajaBloqueada: !cajaAbierta,
+      cajeroActual: cajero || 'Activo',
+      lastHeartbeat: new Date().toISOString(),
+      estadoTexto: cajaAbierta ? 'EN LÍNEA (ACTIVO)' : 'CAJA CERRADA / BLOQUEADA'
+    };
+    db.info.ultima_sincronizacion = new Date().toISOString();
+    res.json({ success: true, status: db.pos_status });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Señal de Cierre/Salida de la Aplicación de Caja
+app.post('/api/sync/pos-exit', checkAuthToken, (req, res) => {
+  try {
+    const { cajero, razon } = req.body;
+    db.pos_status = {
+      online: false,
+      appClosed: true,
+      cajaBloqueada: true,
+      cajeroActual: cajero || 'Ninguno',
+      lastHeartbeat: new Date().toISOString(),
+      estadoTexto: 'PROGRAMA CERRADO - CAJA BLOQUEADA'
+    };
+
+    registrarMovimiento(
+      'cierre',
+      `PROGRAMA CERRADO EN TERMINAL FÍSICA`,
+      `El sistema POS de caja fue cerrado por el usuario (${cajero || 'Cajero'}). Acceso bloqueado en terminal.`,
+      0,
+      { usuario: cajero || 'Sistema', razon: razon || 'Cierre de ventana' }
+    );
+
+    saveDB();
+    res.json({ success: true, message: 'Estado de programa cerrado y bloqueado registrado' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
