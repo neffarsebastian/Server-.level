@@ -1,0 +1,28 @@
+{
+  "name": "sistema-pos-remote-server",
+  "version": "1.0.0",
+  "description": "Servidor de Control Remoto, Sincronización y Dashboard Web para Sistema POS LEVEL Gastrobar",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "pos",
+    "dashboard",
+    "remote-control",
+    "render",
+    "realtime"
+  ],
+  "author": "LEVEL Gastrobar",
+  "license": "MIT",
+  "dependencies": {
+    "compression": "^1.7.4",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
