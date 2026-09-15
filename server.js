@@ -1054,11 +1054,11 @@ app.post('/api/remote/broadcast', checkAuthToken, (req, res) => {
   }
 });
 
-// Ajuste remoto de stock desde el celular o dashboard
+// 1. Ajuste remoto de stock desde el celular o dashboard
 app.post('/api/remote/update-stock', checkAuthToken, (req, res) => {
   try {
     const { productId, delta, newStock, razon, usuario } = req.body;
-    const prod = db.productos.find(p => p.id === Number(productId) || p.id === productId);
+    const prod = db.productos.find(p => p.id === Number(productId) || p.id === productId || String(p.id) === String(productId));
     if (!prod) return res.status(404).json({ error: 'Producto no encontrado' });
 
     let finalStock = Number(prod.stock) || 0;
@@ -1068,13 +1068,75 @@ app.post('/api/remote/update-stock', checkAuthToken, (req, res) => {
       finalStock = Math.max(0, finalStock + Number(delta));
     }
 
-    const stockAnterior = prod.stock;
+    const stockAnterior = prod.stock !== undefined ? prod.stock : 0;
     prod.stock = finalStock;
+
+    const historyRecord = {
+      id: Date.now(),
+      producto_id: prod.id,
+      tipo: finalStock >= stockAnterior ? 'add' : 'remove',
+      cantidad: Math.abs(finalStock - stockAnterior),
+      concepto: razon || `Ajuste remoto por ${usuario || 'Admin Remoto'}`,
+      fecha: new Date().toLocaleDateString('es-CO'),
+      hora: new Date().toLocaleTimeString('es-CO'),
+      precio_unitario: Number(prod.cost) || Number(prod.price) || 0
+    };
+    db.inventario_historial.push(historyRecord);
 
     const mov = registrarMovimiento(
       'inventario',
-      `Ajuste Remoto de Stock: ${prod.name}`,
+      `Ajuste Remoto de Stock: ${prod.name || prod.nombre}`,
       `De ${stockAnterior} a ${finalStock} unidades | Motivo: ${razon || 'Ajuste desde celular'}`,
+      0,
+      { usuario: usuario || 'Admin Remoto', producto_id: prod.id, newStock: finalStock, stockAnterior }
+    );
+
+    db.info.ultima_sincronizacion = new Date().toISOString();
+    saveDB();
+
+    broadcastLiveEvent('inventory_updated', { products: db.productos, movimiento: mov });
+
+    pendingPosActions.push({
+      id: `stock_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      tipo: 'stock_update',
+      productId: prod.id,
+      newStock: finalStock,
+      stockAnterior,
+      producto: prod,
+      historyRecord,
+      mensaje: `Stock modificado: ${prod.name || prod.nombre} -> ${finalStock} un.`,
+      emisor: usuario || 'Admin Remoto'
+    });
+
+    res.json({ success: true, product: prod });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 2. Edición completa de producto (Nombre, Precio, Costo, Categoría, Stock)
+app.post('/api/remote/update-product', checkAuthToken, (req, res) => {
+  try {
+    const { id, name, nombre, price, precio, cost, costo, category, categoria, stock, image, imagen, usuario } = req.body;
+    const prod = db.productos.find(p => p.id === Number(id) || p.id === id || String(p.id) === String(id));
+    if (!prod) return res.status(404).json({ error: 'Producto no encontrado' });
+
+    if (name || nombre) prod.name = name || nombre;
+    if (price !== undefined || precio !== undefined) {
+      prod.price = Number(price !== undefined ? price : precio);
+      prod.precio = prod.price;
+    }
+    if (cost !== undefined || costo !== undefined) {
+      prod.cost = Number(cost !== undefined ? cost : costo);
+    }
+    if (category || categoria) prod.category = (category || categoria).toLowerCase();
+    if (image || imagen) prod.image = image || imagen;
+    if (stock !== undefined) prod.stock = Math.max(0, Number(stock));
+
+    const mov = registrarMovimiento(
+      'inventario',
+      `Producto Modificado Remotamente: ${prod.name}`,
+      `Precio: $${(Number(prod.price) || 0).toLocaleString('es-CO')} | Costo: $${(Number(prod.cost) || 0).toLocaleString('es-CO')} | Stock: ${prod.stock} un.`,
       0,
       { usuario: usuario || 'Admin Remoto', producto_id: prod.id }
     );
@@ -1085,15 +1147,100 @@ app.post('/api/remote/update-stock', checkAuthToken, (req, res) => {
     broadcastLiveEvent('inventory_updated', { products: db.productos, movimiento: mov });
 
     pendingPosActions.push({
-      id: `stock_${Date.now()}`,
-      tipo: 'stock_update',
+      id: `prod_upd_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      tipo: 'product_update',
       productId: prod.id,
-      newStock: finalStock,
-      mensaje: `Stock modificado remotamente: ${prod.name} -> ${finalStock} un.`,
+      product: prod,
+      mensaje: `Producto actualizado: ${prod.name} (Precio: $${(Number(prod.price) || 0).toLocaleString('es-CO')})`,
       emisor: usuario || 'Admin Remoto'
     });
 
     res.json({ success: true, product: prod });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. Creación remota de nuevo producto
+app.post('/api/remote/create-product', checkAuthToken, (req, res) => {
+  try {
+    const { name, nombre, price, precio, cost, costo, category, categoria, stock, image, imagen, usuario } = req.body;
+    if (!name && !nombre) return res.status(400).json({ error: 'Nombre del producto requerido' });
+
+    const maxId = db.productos.reduce((max, p) => Math.max(max, Number(p.id) || 0), 0);
+    const newId = maxId + 1;
+
+    const newProd = {
+      id: newId,
+      name: name || nombre,
+      price: Number(price !== undefined ? price : precio) || 0,
+      precio: Number(price !== undefined ? price : precio) || 0,
+      cost: Number(cost !== undefined ? cost : costo) || 0,
+      category: (category || categoria || 'otros').toLowerCase(),
+      stock: Math.max(0, Number(stock) || 0),
+      image: image || imagen || 'images/default_product.png'
+    };
+
+    db.productos.push(newProd);
+
+    const mov = registrarMovimiento(
+      'inventario',
+      `Nuevo Producto Creado Remotamente: ${newProd.name}`,
+      `Categoría: ${newProd.category} | Precio: $${newProd.price.toLocaleString('es-CO')} | Stock: ${newProd.stock}`,
+      0,
+      { usuario: usuario || 'Admin Remoto', producto_id: newProd.id }
+    );
+
+    db.info.ultima_sincronizacion = new Date().toISOString();
+    saveDB();
+
+    broadcastLiveEvent('inventory_updated', { products: db.productos, movimiento: mov });
+
+    pendingPosActions.push({
+      id: `prod_crt_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      tipo: 'product_create',
+      product: newProd,
+      mensaje: `Nuevo producto añadido: ${newProd.name}`,
+      emisor: usuario || 'Admin Remoto'
+    });
+
+    res.json({ success: true, product: newProd });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 4. Eliminación remota de producto
+app.post('/api/remote/delete-product', checkAuthToken, (req, res) => {
+  try {
+    const { productId, usuario } = req.body;
+    const prodIdx = db.productos.findIndex(p => p.id === Number(productId) || p.id === productId || String(p.id) === String(productId));
+    if (prodIdx === -1) return res.status(404).json({ error: 'Producto no encontrado' });
+
+    const deleted = db.productos.splice(prodIdx, 1)[0];
+
+    const mov = registrarMovimiento(
+      'inventario',
+      `Producto Eliminado Remotamente: ${deleted.name}`,
+      `ID: ${deleted.id} eliminado del catálogo`,
+      0,
+      { usuario: usuario || 'Admin Remoto', producto_id: deleted.id }
+    );
+
+    db.info.ultima_sincronizacion = new Date().toISOString();
+    saveDB();
+
+    broadcastLiveEvent('inventory_updated', { products: db.productos, movement: mov });
+
+    pendingPosActions.push({
+      id: `prod_del_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      tipo: 'product_delete',
+      productId: deleted.id,
+      mensaje: `Producto eliminado: ${deleted.name}`,
+      emisor: usuario || 'Admin Remoto'
+    });
+
+    res.json({ success: true, deletedId: deleted.id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -371,6 +371,9 @@
             <p class="section-subtitle">Supervisión remota en vivo, ajuste de existencias y control de productos críticos</p>
           </div>
           <div style="display: flex; gap: 8px; align-items: center;">
+            <button type="button" class="btn-refresh" style="background: linear-gradient(135deg, #00f3ff, #0077ff); color: #000; font-weight: 700; border: none; padding: 7px 14px; font-size: 12px; border-radius: 8px;" onclick="openNewProductModal()">
+              <i class="fa-solid fa-plus"></i> Nuevo Producto
+            </button>
             <div class="view-toggle-group">
               <button type="button" class="btn-toggle-view active" id="btnViewCards" onclick="setInventoryViewMode('cards')" title="Vista en Tarjetas">
                 <i class="fa-solid fa-grip"></i>
@@ -509,6 +512,64 @@
             </button>
             <button type="button" class="btn-refresh" style="background: linear-gradient(135deg, #00f3ff, #0077ff); color: #000; font-weight: 700; border: none; justify-content: center;" onclick="saveStockAdjustment()">
               <i class="fa-solid fa-check"></i> Guardar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal de Edición Completa / Creación de Producto -->
+      <div id="modalProductEdit" class="login-overlay hidden" style="z-index: 9999999;">
+        <div class="login-card" style="max-width: 480px;">
+          <div class="login-brand" style="margin-bottom: 12px;">
+            <i class="fa-solid fa-pen-to-square text-cyan" style="font-size: 24px;"></i>
+            <h2 id="modalProdEditTitle" style="font-size: 16px; margin: 6px 0; color: #fff;">Editar Producto</h2>
+            <p style="font-size: 11px; color: var(--text-muted);">Los cambios se aplicarán instantáneamente en la caja física</p>
+          </div>
+
+          <input type="hidden" id="editProdId">
+
+          <div class="config-field" style="margin-bottom: 10px;">
+            <label>Nombre del Producto:</label>
+            <input type="text" id="editProdName" placeholder="Ej: Cerveza Corona 330ml" required>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+            <div class="config-field">
+              <label>Categoría:</label>
+              <select id="editProdCategory" style="width: 100%; background: var(--bg-dark); border: 1px solid var(--border-card); color: #fff; padding: 10px; border-radius: 8px;">
+                <option value="cervezas">Cervezas</option>
+                <option value="licores">Licores</option>
+                <option value="whisky">Whisky</option>
+                <option value="micheladas">Micheladas</option>
+                <option value="cocteles">Cócteles</option>
+                <option value="bebidas">Bebidas / Refrescos</option>
+                <option value="snacks">Snacks / Comidas</option>
+                <option value="otros">Otros</option>
+              </select>
+            </div>
+            <div class="config-field">
+              <label>Stock Inicial / Actual:</label>
+              <input type="number" id="editProdStock" min="0" placeholder="0">
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
+            <div class="config-field">
+              <label>Costo de Compra ($):</label>
+              <input type="number" id="editProdCost" min="0" placeholder="Ej: 5000">
+            </div>
+            <div class="config-field">
+              <label>Precio de Venta ($):</label>
+              <input type="number" id="editProdPrice" min="0" placeholder="Ej: 10000" required>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <button type="button" class="btn-refresh" style="background: rgba(255, 255, 255, 0.08); border-color: rgba(255,255,255,0.2); justify-content: center;" onclick="closeProductEditModal()">
+              Cancelar
+            </button>
+            <button type="button" class="btn-refresh" style="background: linear-gradient(135deg, #00f3ff, #0077ff); color: #000; font-weight: 700; border: none; justify-content: center;" onclick="saveProductEdit()">
+              <i class="fa-solid fa-cloud-arrow-up"></i> Guardar y Sincronizar
             </button>
           </div>
         </div>

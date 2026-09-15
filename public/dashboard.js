@@ -937,11 +937,14 @@ function renderInventory() {
                 <div class="inv-price-tag">${formatMoney(prodPrice)}</div>
                 ${prodCost > 0 ? `<div style="font-size: 10px; color: var(--text-muted);">Costo: ${formatMoney(prodCost)}</div>` : ''}
               </div>
-              <div style="display: flex; gap: 6px; align-items: center;">
-                <button type="button" class="btn-refresh" style="padding: 4px 8px; font-size: 12px; background: rgba(255, 51, 102, 0.15); border-color: #ff3366; color: #ff3366;" onclick="quickAdjustStock(${p.id}, -1)" title="Restar 1">-1</button>
-                <button type="button" class="btn-refresh" style="padding: 4px 8px; font-size: 12px; background: rgba(0, 255, 136, 0.15); border-color: #00ff88; color: #00ff88;" onclick="quickAdjustStock(${p.id}, 1)" title="Sumar 1">+1</button>
-                <button type="button" class="btn-adjust-stock" onclick="openStockModal(${p.id})" title="Ajuste exacto">
-                  <i class="fa-solid fa-pen-to-square"></i>
+              <div style="display: flex; gap: 5px; align-items: center;">
+                <button type="button" class="btn-refresh" style="padding: 4px 7px; font-size: 11px; background: rgba(255, 51, 102, 0.15); border-color: #ff3366; color: #ff3366;" onclick="quickAdjustStock(${p.id}, -1)" title="Restar 1">-1</button>
+                <button type="button" class="btn-refresh" style="padding: 4px 7px; font-size: 11px; background: rgba(0, 255, 136, 0.15); border-color: #00ff88; color: #00ff88;" onclick="quickAdjustStock(${p.id}, 1)" title="Sumar 1">+1</button>
+                <button type="button" class="btn-adjust-stock" onclick="openStockModal(${p.id})" title="Ajuste de Stock">
+                  <i class="fa-solid fa-sliders"></i>
+                </button>
+                <button type="button" class="btn-adjust-stock" onclick="openProductEditModal(${p.id})" title="Editar Producto Completo" style="border-color: #00f3ff; color: #00f3ff;">
+                  <i class="fa-solid fa-pen"></i>
                 </button>
               </div>
             </div>
@@ -988,7 +991,8 @@ function renderInventory() {
               <div style="display: inline-flex; gap: 4px;">
                 <button type="button" class="btn-refresh" style="padding: 2px 6px; font-size: 11px; background: rgba(255, 51, 102, 0.15); border-color: #ff3366; color: #ff3366;" onclick="quickAdjustStock(${p.id}, -1)">-1</button>
                 <button type="button" class="btn-refresh" style="padding: 2px 6px; font-size: 11px; background: rgba(0, 255, 136, 0.15); border-color: #00ff88; color: #00ff88;" onclick="quickAdjustStock(${p.id}, 1)">+1</button>
-                <button type="button" class="btn-refresh" style="padding: 2px 8px; font-size: 11px; background: rgba(0, 243, 255, 0.15); border-color: #00f3ff; color: #00f3ff;" onclick="openStockModal(${p.id})">Editar</button>
+                <button type="button" class="btn-refresh" style="padding: 2px 6px; font-size: 11px; background: rgba(0, 243, 255, 0.15); border-color: #00f3ff; color: #00f3ff;" onclick="openStockModal(${p.id})" title="Stock"><i class="fa-solid fa-sliders"></i></button>
+                <button type="button" class="btn-refresh" style="padding: 2px 6px; font-size: 11px; background: rgba(168, 85, 247, 0.15); border-color: #a855f7; color: #a855f7;" onclick="openProductEditModal(${p.id})" title="Editar"><i class="fa-solid fa-pen"></i></button>
               </div>
             </td>
           </tr>
@@ -1060,7 +1064,6 @@ async function saveStockAdjustment() {
 
     const data = await res.json();
     if (data.success) {
-      // Actualizar caché local
       const idx = (cachedData.inventory || []).findIndex(p => p.id === prodId);
       if (idx >= 0) {
         cachedData.inventory[idx].stock = newStock;
@@ -1073,6 +1076,122 @@ async function saveStockAdjustment() {
     }
   } catch (err) {
     alert("Error de conexión al actualizar stock: " + err.message);
+  }
+}
+
+// Modal de Creación / Edición Completa de Producto
+function openNewProductModal() {
+  const modal = document.getElementById('modalProductEdit');
+  const title = document.getElementById('modalProdEditTitle');
+  const idInput = document.getElementById('editProdId');
+  const nameInput = document.getElementById('editProdName');
+  const catInput = document.getElementById('editProdCategory');
+  const stockInput = document.getElementById('editProdStock');
+  const costInput = document.getElementById('editProdCost');
+  const priceInput = document.getElementById('editProdPrice');
+
+  if (title) title.textContent = 'Nuevo Producto';
+  if (idInput) idInput.value = '';
+  if (nameInput) nameInput.value = '';
+  if (catInput) catInput.value = 'cervezas';
+  if (stockInput) stockInput.value = '10';
+  if (costInput) costInput.value = '';
+  if (priceInput) priceInput.value = '';
+
+  if (modal) modal.classList.remove('hidden');
+}
+
+function openProductEditModal(prodId) {
+  const prod = (cachedData.inventory || []).find(p => p.id === Number(prodId) || p.id === prodId);
+  if (!prod) return;
+
+  const modal = document.getElementById('modalProductEdit');
+  const title = document.getElementById('modalProdEditTitle');
+  const idInput = document.getElementById('editProdId');
+  const nameInput = document.getElementById('editProdName');
+  const catInput = document.getElementById('editProdCategory');
+  const stockInput = document.getElementById('editProdStock');
+  const costInput = document.getElementById('editProdCost');
+  const priceInput = document.getElementById('editProdPrice');
+
+  if (title) title.textContent = `Editar Producto: ${prod.name || prod.nombre}`;
+  if (idInput) idInput.value = prod.id;
+  if (nameInput) nameInput.value = prod.name || prod.nombre || '';
+  if (catInput) catInput.value = (prod.category || 'otros').toLowerCase();
+  if (stockInput) stockInput.value = prod.stock !== undefined ? prod.stock : 0;
+  if (costInput) costInput.value = prod.cost || '';
+  if (priceInput) priceInput.value = prod.price || prod.precio || '';
+
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeProductEditModal() {
+  const modal = document.getElementById('modalProductEdit');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function saveProductEdit() {
+  const idInput = document.getElementById('editProdId');
+  const nameInput = document.getElementById('editProdName');
+  const catInput = document.getElementById('editProdCategory');
+  const stockInput = document.getElementById('editProdStock');
+  const costInput = document.getElementById('editProdCost');
+  const priceInput = document.getElementById('editProdPrice');
+
+  const prodId = idInput ? idInput.value : '';
+  const name = nameInput ? nameInput.value.trim() : '';
+  const category = catInput ? catInput.value : 'otros';
+  const stock = Number(stockInput ? stockInput.value : 0) || 0;
+  const cost = Number(costInput ? costInput.value : 0) || 0;
+  const price = Number(priceInput ? priceInput.value : 0) || 0;
+
+  if (!name) {
+    alert("Por favor ingresa el nombre del producto.");
+    return;
+  }
+  if (price <= 0) {
+    alert("Por favor ingresa un precio de venta válido.");
+    return;
+  }
+
+  const isNew = !prodId;
+  const endpoint = isNew ? '/api/remote/create-product' : '/api/remote/update-product';
+  const payload = {
+    id: prodId ? Number(prodId) : undefined,
+    name,
+    category,
+    stock,
+    cost,
+    price,
+    usuario: 'Administrador (Dashboard)'
+  };
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-token': authToken || 'level-secret-token-2026'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (data.success && data.product) {
+      if (isNew) {
+        cachedData.inventory.push(data.product);
+      } else {
+        const idx = cachedData.inventory.findIndex(p => p.id === Number(prodId) || p.id === prodId);
+        if (idx >= 0) cachedData.inventory[idx] = data.product;
+      }
+      closeProductEditModal();
+      renderInventory();
+      showLiveNotification('✅ Producto Sincronizado', `${data.product.name} actualizado y enviado a la caja`);
+    } else {
+      alert("Error al guardar: " + (data.error || 'Desconocido'));
+    }
+  } catch (err) {
+    alert("Error de conexión: " + err.message);
   }
 }
 
