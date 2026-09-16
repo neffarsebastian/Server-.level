@@ -1408,12 +1408,22 @@ app.get('/api/remote/pending-actions', checkAuthToken, (req, res) => {
   res.json({ success: true, actions });
 });
 
-// Servir archivos estáticos del Dashboard Web
-app.use(express.static(path.join(__dirname, 'public')));
-
+// Servir archivos estáticos del Dashboard Web con control estricto de caché para móviles
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: false,
+  lastModified: false,
+  setHeaders: (res, filePath) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+}));
 
 // Fallback SPA para cualquier ruta no-API
 app.get('*', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

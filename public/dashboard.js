@@ -20,6 +20,22 @@ let currentInventoryView = 'cards';
 let activeAdjustProduct = null;
 
 // ==========================================
+// HAPTIC FEEDBACK (CROSS-PLATFORM SAFE)
+// ==========================================
+function triggerHaptic(type = 'light') {
+  try {
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator && typeof navigator.vibrate === 'function') {
+      if (type === 'light') navigator.vibrate(12);
+      else if (type === 'medium') navigator.vibrate(25);
+      else if (type === 'error') navigator.vibrate([30, 40, 30]);
+      else if (type === 'success') navigator.vibrate([15, 30, 20]);
+    }
+  } catch (e) {
+    // Silencioso en navegadores o iOS donde vibrate no está disponible
+  }
+}
+
+// ==========================================
 // 1. AUTENTICACIÓN POR PIN
 // ==========================================
 
@@ -34,6 +50,7 @@ function updatePinDots() {
 }
 
 function pressKey(num) {
+  triggerHaptic('light');
   if (enteredPin.length < 4) {
     enteredPin += num;
     updatePinDots();
@@ -46,11 +63,13 @@ function pressKey(num) {
 }
 
 function clearPin() {
+  triggerHaptic('light');
   enteredPin = '';
   updatePinDots();
 }
 
 function backspacePin() {
+  triggerHaptic('light');
   if (enteredPin.length > 0) {
     enteredPin = enteredPin.slice(0, -1);
     updatePinDots();
@@ -86,6 +105,7 @@ async function verifyPin() {
 }
 
 function showPinError() {
+  triggerHaptic('error');
   const errEl = document.getElementById('loginError');
   errEl.classList.remove('hidden');
   enteredPin = '';
@@ -175,6 +195,7 @@ function toggleFullScreen() {
 }
 
 function switchTab(tabId) {
+  triggerHaptic('light');
   currentTab = tabId;
   // Desactivar todos los botones desktop y móviles
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -424,34 +445,28 @@ function renderOverview(data) {
   if (cajaBanner && cajaStatusLabel && cajeroActiveName && cajaCalculatedBalance) {
     if (k.posOnline && k.cajaAbierta) {
       // 1. POS ABIERTO Y OPERANDO
-      cajaStatusLabel.innerHTML = '<span style="color:#00ff88;"><i class="fa-solid fa-circle-check"></i> ESTADO: TURNO ABIERTO & EN LÍNEA</span>';
-      cajeroActiveName.textContent = `Cajero: ${k.cajeroActual || 'Activo'}`;
+      cajaStatusLabel.innerHTML = '<span class="status-indicator online"></span> TURNO ABIERTO';
+      cajeroActiveName.innerHTML = `<i class="fa-solid fa-user-check"></i> ${k.cajeroActual || 'Cajero Activo'}`;
       cajaCalculatedBalance.textContent = formatMoney(k.saldoEnCajaCalculado);
-      if (cajaSubtext) cajaSubtext.textContent = 'Turno en curso | Ventas activas en tiempo real';
-      cajaBanner.style.borderColor = 'rgba(0, 255, 136, 0.4)';
-      cajaBanner.style.background = 'linear-gradient(135deg, rgba(0, 255, 136, 0.08), rgba(15, 23, 42, 0.9))';
-      cajaBanner.style.boxShadow = '0 0 20px rgba(0, 255, 136, 0.15)';
-      if (syncStatusText) syncStatusText.textContent = 'POS En Línea (Activo)';
+      if (cajaSubtext) cajaSubtext.textContent = 'Turno en curso • Sincronización en tiempo real';
+      cajaBanner.className = 'caja-live-banner status-open';
+      if (syncStatusText) syncStatusText.textContent = 'En Línea';
     } else if (k.posOnline && !k.cajaAbierta) {
       // 2. POS ABIERTO PERO ESPERANDO APERTURA DE CAJA
-      cajaStatusLabel.innerHTML = '<span style="color:#ffd700;"><i class="fa-solid fa-clock"></i> POS EN LÍNEA (ESPERANDO APERTURA)</span>';
-      cajeroActiveName.textContent = `Usuario: ${k.cajeroActual || 'Esperando inicio de turno'}`;
+      cajaStatusLabel.innerHTML = '<span class="status-indicator waiting"></span> ESPERANDO APERTURA';
+      cajeroActiveName.innerHTML = `<i class="fa-solid fa-user-clock"></i> ${k.cajeroActual || 'En espera'}`;
       cajaCalculatedBalance.textContent = '$0';
-      if (cajaSubtext) cajaSubtext.textContent = 'Aplicación ejecutándose | Caja en espera de apertura';
-      cajaBanner.style.borderColor = 'rgba(255, 215, 0, 0.4)';
-      cajaBanner.style.background = 'linear-gradient(135deg, rgba(255, 215, 0, 0.08), rgba(15, 23, 42, 0.9))';
-      cajaBanner.style.boxShadow = '0 0 20px rgba(255, 215, 0, 0.15)';
-      if (syncStatusText) syncStatusText.textContent = 'POS En Línea (Esperando Apertura)';
+      if (cajaSubtext) cajaSubtext.textContent = 'Terminal conectada • Esperando inicio de turno';
+      cajaBanner.className = 'caja-live-banner status-waiting';
+      if (syncStatusText) syncStatusText.textContent = 'Esperando Caja';
     } else {
       // 3. PROGRAMA CERRADO O CAJA BLOQUEADA
-      cajaStatusLabel.innerHTML = '<span style="color:#ff3366; animation: pulse 1.5s infinite;"><i class="fa-solid fa-lock"></i> 🔒 PROGRAMA CERRADO - CAJA BLOQUEADA</span>';
-      cajeroActiveName.textContent = 'Terminal Desconectada / Cerrada';
+      cajaStatusLabel.innerHTML = '<span class="status-indicator closed"></span> TERMINAL OFFLINE';
+      cajeroActiveName.innerHTML = '<i class="fa-solid fa-lock"></i> Caja Cerrada';
       cajaCalculatedBalance.textContent = formatMoney(k.saldoEnCajaCalculado);
-      if (cajaSubtext) cajaSubtext.textContent = 'La aplicación de caja física no está en ejecución';
-      cajaBanner.style.borderColor = 'rgba(255, 51, 102, 0.5)';
-      cajaBanner.style.background = 'linear-gradient(135deg, rgba(255, 51, 102, 0.12), rgba(15, 23, 42, 0.95))';
-      cajaBanner.style.boxShadow = '0 0 25px rgba(255, 51, 102, 0.25)';
-      if (syncStatusText) syncStatusText.textContent = 'Desconectado / Caja Bloqueada';
+      if (cajaSubtext) cajaSubtext.textContent = 'La aplicación de caja física no está transmitiendo';
+      cajaBanner.className = 'caja-live-banner status-closed';
+      if (syncStatusText) syncStatusText.textContent = 'Desconectado';
     }
   }
 
@@ -1555,10 +1570,141 @@ async function sendRemoteBroadcast() {
   }
 }
 
-// Auto-login si ya existe token
-window.addEventListener('DOMContentLoaded', () => {
-  if (sessionStorage.getItem('level_auth_token')) {
-    showApp();
+// ==========================================
+// INTRO ANIMATION & AUDIO SEQUENCE (PREMIUM)
+// ==========================================
+let introFinished = false;
+let introTimer = null;
+
+function playIntroCyberSound() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+
+    // Acorde futurista sintetizado: C5, E5, G5, B5, D6 con reverb decay
+    const notes = [523.25, 659.25, 783.99, 987.77, 1174.66];
+    const now = ctx.currentTime;
+
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.type = i % 2 === 0 ? 'sine' : 'triangle';
+      osc.frequency.setValueAtTime(freq, now + i * 0.08);
+
+      gain.gain.setValueAtTime(0.001, now + i * 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.08, now + i * 0.08 + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.08 + 0.8);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now + i * 0.08);
+      osc.stop(now + i * 0.08 + 0.85);
+    });
+  } catch (e) {
+    // Audio autodesactivado silenciosamente si el navegador bloquea autoplay
   }
+}
+
+function initIntroSequence() {
+  const overlay = document.getElementById('introSplashOverlay');
+  const fill = document.getElementById('introProgressFill');
+  const label = document.getElementById('introStepLabel');
+  const percent = document.getElementById('introPercentText');
+
+  if (!overlay) {
+    if (sessionStorage.getItem('level_auth_token')) {
+      showApp();
+    } else {
+      const login = document.getElementById('loginScreen');
+      if (login) login.classList.remove('hidden');
+    }
+    return;
+  }
+
+  // Desbloqueo de audio al primer toque/click
+  const triggerAudio = () => {
+    playIntroCyberSound();
+    window.removeEventListener('click', triggerAudio);
+    window.removeEventListener('touchstart', triggerAudio);
+  };
+  window.addEventListener('click', triggerAudio, { once: true });
+  window.addEventListener('touchstart', triggerAudio, { once: true });
+
+  const steps = [
+    { pct: 25, text: 'Verificando túnel seguro & TLS...' },
+    { pct: 60, text: 'Conectando con Servidor POS Local...' },
+    { pct: 88, text: 'Sincronizando métricas en tiempo real...' },
+    { pct: 100, text: 'Sistema Remoto Listo ✓' }
+  ];
+
+  let currentStep = 0;
+  
+  function advance() {
+    if (introFinished) return;
+    
+    if (currentStep < steps.length) {
+      const s = steps[currentStep];
+      if (fill) fill.style.width = `${s.pct}%`;
+      if (percent) percent.textContent = `${s.pct}%`;
+      if (label) label.textContent = s.text;
+      currentStep++;
+      introTimer = setTimeout(advance, 380);
+    } else {
+      introTimer = setTimeout(finishIntroAnimation, 400);
+    }
+  }
+
+  introTimer = setTimeout(advance, 250);
+}
+
+function skipIntroAnimation() {
+  if (introFinished) return;
+  finishIntroAnimation();
+}
+
+function finishIntroAnimation() {
+  if (introFinished) return;
+  introFinished = true;
+  if (introTimer) clearTimeout(introTimer);
+
+  const fill = document.getElementById('introProgressFill');
+  const percent = document.getElementById('introPercentText');
+  const label = document.getElementById('introStepLabel');
+  if (fill) fill.style.width = '100%';
+  if (percent) percent.textContent = '100%';
+  if (label) label.textContent = 'Acceso concedido ✓';
+
+  const overlay = document.getElementById('introSplashOverlay');
+  if (overlay) {
+    overlay.classList.add('fade-out');
+    setTimeout(() => {
+      overlay.style.display = 'none';
+      if (sessionStorage.getItem('level_auth_token')) {
+        showApp();
+      } else {
+        const login = document.getElementById('loginScreen');
+        if (login) login.classList.remove('hidden');
+      }
+    }, 450);
+  } else {
+    if (sessionStorage.getItem('level_auth_token')) {
+      showApp();
+    } else {
+      const login = document.getElementById('loginScreen');
+      if (login) login.classList.remove('hidden');
+    }
+  }
+}
+
+// Auto-inicio de la intro y el dashboard
+window.addEventListener('DOMContentLoaded', () => {
+  initIntroSequence();
 });
+
 

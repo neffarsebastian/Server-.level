@@ -2,14 +2,28 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>LEVEL Gastrobar | Panel de Control Remoto & Auditoría</title>
   
-  <!-- Manifest & PWA -->
+  <!-- Manifest & PWA Cross-Platform (Android & Apple iOS) -->
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#07090e">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-192.png">
+  
+  <!-- Apple iOS Safari Specific Web App Tags -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="LEVEL Remote">
+  
+  <!-- Android Chrome / WebAPK Specific Tags -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="application-name" content="LEVEL Remote">
+  <meta name="theme-color" content="#07090e">
+  <meta name="theme-color" content="#07090e" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#07090e" media="(prefers-color-scheme: light)">
+  <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
   
   <!-- Google Fonts & FontAwesome -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,16 +31,57 @@
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   
-  <link rel="stylesheet" href="dashboard.css">
+  <link rel="stylesheet" href="dashboard.css?v=20260916_v5">
 
   <!-- jsPDF & AutoTable para Exportación de PDF Profesional -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
+  <!-- INTRO ANIMATION OVERLAY (PREMIUM CYBER-SPLASH) -->
+  <div id="introSplashOverlay" class="intro-splash-overlay">
+    <div class="intro-cyber-grid"></div>
+    <div class="intro-radial-glow"></div>
+    
+    <div class="intro-hologram-container">
+      <div class="intro-orbit-ring ring-outer"></div>
+      <div class="intro-orbit-ring ring-middle"></div>
+      <div class="intro-orbit-ring ring-inner"></div>
+      <div class="intro-radar-sweep"></div>
+      
+      <div class="intro-core-emblem">
+        <i class="fa-solid fa-satellite-dish intro-core-icon"></i>
+      </div>
+    </div>
+
+    <div class="intro-brand-box">
+      <h1 class="intro-brand-title">LEVEL <span class="intro-gold-gradient">REMOTE</span></h1>
+      <p class="intro-brand-sub">CONTROL REMOTO & AUDITORÍA EN TIEMPO REAL</p>
+      <div class="intro-pill-badge">
+        <span class="intro-live-dot"></span>
+        <span>SISTEMA EN LA NUBE V5.0 VIP</span>
+      </div>
+    </div>
+
+    <div class="intro-loading-wrapper">
+      <div class="intro-progress-track">
+        <div class="intro-progress-fill" id="introProgressFill"></div>
+      </div>
+      
+      <div class="intro-status-text">
+        <span class="intro-status-cursor">▶</span> <span id="introStepLabel">Estableciendo enlace seguro...</span>
+      </div>
+      
+      <div class="intro-percent-text" id="introPercentText">0%</div>
+    </div>
+
+    <button type="button" class="intro-skip-btn" onclick="skipIntroAnimation()" id="introSkipBtn">
+      <span>Tocar para entrar</span> <i class="fa-solid fa-angles-right"></i>
+    </button>
+  </div>
 
   <!-- PANTALLA DE LOGIN PIN -->
-  <div id="loginScreen" class="login-overlay">
+  <div id="loginScreen" class="login-overlay hidden">
     <div class="login-card">
       <div class="login-brand">
         <i class="fa-solid fa-satellite-dish brand-icon pulse-glow"></i>
@@ -64,35 +119,30 @@
   <!-- APLICACIÓN PRINCIPAL -->
   <div id="appContainer" class="app-layout hidden">
     
-    <!-- HEADER SUPERIOR -->
+    <!-- HEADER APP MÓVIL SUPERIOR -->
     <header class="top-navbar">
       <div class="nav-left">
         <div class="brand-logo">
           <div class="live-dot-pulse"></div>
           <span class="brand-title">LEVEL</span>
-          <span class="brand-sub">GASTROBAR</span>
-          <span class="badge-remote"><i class="fa-solid fa-cloud"></i> NUBE</span>
+          <span class="brand-sub">REMOTE</span>
         </div>
       </div>
 
       <div class="nav-center">
         <div class="sync-status-pill" id="syncStatusPill">
           <i class="fa-solid fa-circle text-success status-dot"></i>
-          <span id="syncStatusText">Conectado en vivo</span>
+          <span id="syncStatusText">En vivo</span>
           <span class="sync-time" id="syncTimeText">--:--:--</span>
         </div>
       </div>
 
       <div class="nav-right">
-        <button class="action-btn btn-sound" id="btnSoundToggle" onclick="toggleSound()" title="Activar / Silenciar Notificaciones Sonoras">
+        <button class="action-btn btn-sound" id="btnSoundToggle" onclick="toggleSound()" title="Sonido">
           <i class="fa-solid fa-volume-high" id="soundIcon"></i>
-        </button>
-        <button class="action-btn btn-fullscreen" onclick="toggleFullScreen()" title="Pantalla Completa">
-          <i class="fa-solid fa-expand"></i>
         </button>
         <button class="action-btn btn-refresh" onclick="fetchDashboardData()" title="Refrescar Datos">
           <i class="fa-solid fa-rotate" id="refreshIcon"></i>
-          <span class="btn-text-desktop">Actualizar</span>
         </button>
         <button class="action-btn btn-logout" onclick="logout()" title="Cerrar Sesión">
           <i class="fa-solid fa-right-from-bracket"></i>
@@ -100,131 +150,109 @@
       </div>
     </header>
 
-    <!-- BARRA DE NAVEGACIÓN POR PESTAÑAS (DESKTOP & TABLET) -->
-    <nav class="tabs-nav">
-      <button class="tab-btn active" onclick="switchTab('overview')" id="tab-overview">
-        <i class="fa-solid fa-chart-pie"></i>
-        <span>Métricas en Vivo</span>
-      </button>
-      <button class="tab-btn" onclick="switchTab('tables')" id="tab-tables">
-        <i class="fa-solid fa-martini-glass-citrus"></i>
-        <span>Mesas en Vivo</span>
-        <span class="tab-badge" id="tabTablesCount">0</span>
-      </button>
-      <button class="tab-btn" onclick="switchTab('movements')" id="tab-movements">
-        <i class="fa-solid fa-timeline"></i>
-        <span>Auditoría</span>
-      </button>
-      <button class="tab-btn" onclick="switchTab('sales')" id="tab-sales">
-        <i class="fa-solid fa-receipt"></i>
-        <span>Ventas</span>
-      </button>
-      <button class="tab-btn" onclick="switchTab('inventory')" id="tab-inventory">
-        <i class="fa-solid fa-boxes-stacked"></i>
-        <span>Inventario</span>
-      </button>
-      <button class="tab-btn" onclick="switchTab('settings')" id="tab-settings">
-        <i class="fa-solid fa-sliders"></i>
-        <span>Nube & Config</span>
-      </button>
-    </nav>
-
-    <!-- CONTENEDOR PRINCIPAL DE CONTENIDO -->
+    <!-- CONTENEDOR PRINCIPAL DE CONTENIDO MÓVIL -->
     <main class="main-content">
 
       <!-- ============================================== -->
       <!-- PESTAÑA 1: MÉTRICAS Y RESUMEN EN VIVO -->
       <!-- ============================================== -->
       <section id="view-overview" class="view-panel active">
-        <!-- Banner Estado de Caja Actual -->
+        <!-- Banner Estado de Caja Actual (VIP Titanium Card) -->
         <div class="caja-live-banner" id="cajaLiveBanner">
-          <div class="caja-banner-left">
-            <div class="caja-icon-circle">
-              <i class="fa-solid fa-cash-register"></i>
+          <div class="caja-card-header">
+            <div class="caja-status-pill" id="cajaStatusLabel">
+              <span class="status-indicator online"></span> TURNO ABIERTO
             </div>
-            <div>
-              <div class="caja-status-title">
-                <span id="cajaStatusLabel">ESTADO DE CAJA: ABIERTA</span>
-                <span class="badge-cashier" id="cajeroActiveName">Cajero: Juan</span>
-              </div>
-              <p class="caja-subtext" id="cajaSubtext">Turno en curso | Saldo estimado en gaveta</p>
+            <div class="badge-cashier" id="cajeroActiveName">
+              <i class="fa-solid fa-user-check"></i> Cajero: Activo
             </div>
           </div>
-          <div class="caja-banner-right">
+          
+          <div class="caja-card-body">
+            <div class="caja-balance-label">EFECTIVO DISPONIBLE EN CAJA</div>
             <div class="caja-balance-amount" id="cajaCalculatedBalance">$0</div>
-            <div class="caja-balance-label">Efectivo en Caja</div>
+            <p class="caja-subtext" id="cajaSubtext">Turno en curso • Sincronización en tiempo real</p>
+          </div>
+
+          <div class="caja-card-footer">
+            <div class="caja-footer-chip">
+              <i class="fa-solid fa-shield-halved text-success"></i> Terminal Segura
+            </div>
+            <div class="caja-footer-chip" id="cajaSyncBadge">
+              <i class="fa-solid fa-satellite-dish text-cyan"></i> Enlace Nube Activo
+            </div>
           </div>
         </div>
 
-        <!-- GRID DE KPIS / TARJETAS MÉTRICAS -->
+        <!-- GRID DE KPIS / TARJETAS MÉTRICAS (2 COLUMNAS LUXURY) -->
         <div class="kpis-grid">
           <!-- Total Ventas Hoy -->
           <div class="kpi-card card-sales">
             <div class="kpi-header">
+              <div class="kpi-icon-pill gold"><i class="fa-solid fa-sack-dollar"></i></div>
               <span class="kpi-title">VENTAS HOY</span>
-              <div class="kpi-icon"><i class="fa-solid fa-sack-dollar"></i></div>
             </div>
             <div class="kpi-value gold-glow" id="kpiTotalSales">$0</div>
             <div class="kpi-footer">
-              <span id="kpiTxCount">0 transacciones</span>
-              <span class="kpi-trend positive"><i class="fa-solid fa-bolt"></i> En vivo</span>
+              <span id="kpiTxCount">0 tx hoy</span>
+              <span class="kpi-badge-live"><i class="fa-solid fa-bolt"></i> En vivo</span>
             </div>
           </div>
 
-          <!-- Utilidad Estimada (Ganancia Bruta & Margen) -->
+          <!-- Utilidad Estimada -->
           <div class="kpi-card card-utility">
             <div class="kpi-header">
-              <span class="kpi-title">UTILIDAD ESTIMADA</span>
-              <div class="kpi-icon" style="color: #00f3ff;"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+              <div class="kpi-icon-pill cyan"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+              <span class="kpi-title">UTILIDAD</span>
             </div>
             <div class="kpi-value cyan-glow" id="kpiUtility">$0</div>
             <div class="kpi-footer">
               <span id="kpiMarginPct">Margen: 0%</span>
-              <span class="kpi-trend positive" id="kpiNetUtilityTrend"><i class="fa-solid fa-chart-pie"></i> Ventas - Costos</span>
+              <span class="kpi-badge-info" id="kpiNetUtilityTrend"><i class="fa-solid fa-chart-pie"></i> Ganancia</span>
             </div>
           </div>
 
           <!-- Ganancia Neta -->
           <div class="kpi-card card-profit">
             <div class="kpi-header">
-              <span class="kpi-title">BALANCE NETO HOY</span>
-              <div class="kpi-icon"><i class="fa-solid fa-chart-line"></i></div>
+              <div class="kpi-icon-pill green"><i class="fa-solid fa-chart-line"></i></div>
+              <span class="kpi-title">BALANCE NETO</span>
             </div>
             <div class="kpi-value green-glow" id="kpiNetProfit">$0</div>
             <div class="kpi-footer">
-              <span>Ventas menos gastos</span>
+              <span>Flujo neto hoy</span>
             </div>
           </div>
 
           <!-- Efectivo Físico -->
           <div class="kpi-card card-cash">
             <div class="kpi-header">
-              <span class="kpi-title">EFECTIVO HOY</span>
-              <div class="kpi-icon"><i class="fa-solid fa-money-bill-wave"></i></div>
+              <div class="kpi-icon-pill emerald"><i class="fa-solid fa-money-bill-wave"></i></div>
+              <span class="kpi-title">EFECTIVO</span>
             </div>
             <div class="kpi-value" id="kpiCash">$0</div>
             <div class="kpi-footer">
-              <span>Recaudado en físico</span>
+              <span>Físico en gaveta</span>
             </div>
           </div>
 
           <!-- Transferencias / Bancos -->
           <div class="kpi-card card-transfer">
             <div class="kpi-header">
+              <div class="kpi-icon-pill blue"><i class="fa-solid fa-mobile-screen-button"></i></div>
               <span class="kpi-title">TRANSFERENCIAS</span>
-              <div class="kpi-icon"><i class="fa-solid fa-mobile-screen-button"></i></div>
             </div>
             <div class="kpi-value cyan-glow" id="kpiTransfer">$0</div>
             <div class="kpi-footer">
-              <span>Nequi / Daviplata / Tarjeta</span>
+              <span>Nequi / Daviplata</span>
             </div>
           </div>
 
           <!-- Gastos Operativos -->
           <div class="kpi-card card-expenses">
             <div class="kpi-header">
+              <div class="kpi-icon-pill red"><i class="fa-solid fa-arrow-trend-down"></i></div>
               <span class="kpi-title">GASTOS HOY</span>
-              <div class="kpi-icon"><i class="fa-solid fa-arrow-trend-down"></i></div>
             </div>
             <div class="kpi-value red-glow" id="kpiExpenses">$0</div>
             <div class="kpi-footer">
@@ -232,15 +260,16 @@
             </div>
           </div>
 
-          <!-- Mesas Activas / Consumo Acumulado -->
-          <div class="kpi-card card-tables">
+          <!-- Mesas Activas -->
+          <div class="kpi-card card-tables" style="grid-column: span 2;">
             <div class="kpi-header">
-              <span class="kpi-title">MESAS ACTIVAS</span>
-              <div class="kpi-icon"><i class="fa-solid fa-champagne-glasses"></i></div>
+              <div class="kpi-icon-pill purple"><i class="fa-solid fa-champagne-glasses"></i></div>
+              <span class="kpi-title">MESAS & CUENTAS ACTIVAS</span>
+              <span class="kpi-badge-purple" id="kpiTablesTotal">$0 en cuentas</span>
             </div>
-            <div class="kpi-value purple-glow" id="kpiActiveTables">0</div>
-            <div class="kpi-footer">
-              <span id="kpiTablesTotal">$0 acumulado en cuentas</span>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+              <div class="kpi-value purple-glow" id="kpiActiveTables" style="font-size: 22px; margin: 0;">0</div>
+              <button class="btn-quick-tables" type="button" onclick="switchTab('tables')">Ver cuentas <i class="fa-solid fa-chevron-right"></i></button>
             </div>
           </div>
         </div>
@@ -732,6 +761,6 @@
 
   </div>
 
-  <script src="dashboard.js"></script>
+  <script src="dashboard.js?v=20260916_v5"></script>
 </body>
 </html>
