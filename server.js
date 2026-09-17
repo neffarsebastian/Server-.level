@@ -41,31 +41,31 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 
 const DEFAULT_PRODUCTS = [
-  { id: 1, name: "Club Colombia", price: 6000, cost: 3500, stock: 24, category: "cervezas", image: "images/Club colombia.png" },
-  { id: 2, name: "Redd's", price: 6000, cost: 3500, stock: 18, category: "cervezas", image: "images/Redd,s.png" },
-  { id: 3, name: "Coronita", price: 6000, cost: 3800, stock: 20, category: "cervezas", image: "images/Coronita.png" },
-  { id: 4, name: "Corona", price: 10000, cost: 6500, stock: 15, category: "cervezas", image: "images/Corona.png" },
-  { id: 5, name: "Michelada Soda Ginger", price: 9000, cost: 4000, stock: 30, category: "micheladas", image: "images/Michelada soda ginger.png" },
-  { id: 6, name: "Michelada Coronita", price: 10000, cost: 5000, stock: 25, category: "micheladas", image: "images/michelada coronita.png" },
-  { id: 7, name: "Michelada Club Colombia", price: 10000, cost: 5000, stock: 25, category: "micheladas", image: "images/Michelada club colombia.png" },
-  { id: 8, name: "Michelada Redd's", price: 10000, cost: 5000, stock: 20, category: "micheladas", image: "images/Micheladas Redd,s.jpg" },
-  { id: 9, name: "Michelada Corona", price: 15000, cost: 8000, stock: 15, category: "micheladas", image: "images/Michelada Corona.png" },
-  { id: 10, name: "Aguardiente Putumayo 1/2", price: 55000, cost: 32000, stock: 12, category: "licores", image: "images/Aguardiente media.png" },
-  { id: 11, name: "Ron Viejo Caldas 1/2", price: 55000, cost: 32000, stock: 10, category: "licores", image: "images/Ron viejos de caldas media .png" },
-  { id: 12, name: "Ron Caldas 8 Años 1/2", price: 90000, cost: 55000, stock: 8, category: "licores", image: "images/Ron de caldas 8 años.webp" },
-  { id: 13, name: "Tequila Olmeca 1/2", price: 90000, cost: 55000, stock: 6, category: "licores", image: "images/Tequila olmeca media.ng.jpg" },
-  { id: 14, name: "Aguardiente Putumayo", price: 100000, cost: 60000, stock: 14, category: "licores", image: "images/Aguadiente Putumayo botello.png" },
-  { id: 15, name: "Ron Viejo de Caldas", price: 100000, cost: 60000, stock: 12, category: "licores", image: "images/Ron viejos de caldas media .png" },
-  { id: 16, name: "Ron Caldas 8 Años", price: 170000, cost: 110000, stock: 7, category: "licores", image: "images/Ron de caldas 8 años.webp" },
-  { id: 17, name: "Tequila Olmeca", price: 165000, cost: 105000, stock: 5, category: "licores", image: "images/Tequila olmeca media.ng.jpg" },
-  { id: 18, name: "Smirnoff Lulo", price: 100000, cost: 65000, stock: 9, category: "licores", image: "images/smirnoff vodka.png" },
-  { id: 19, name: "Smirnoff Tamarindo", price: 100000, cost: 65000, stock: 8, category: "licores", image: "images/smirnoff Tamarindo.png" },
-  { id: 20, name: "Old Parr", price: 240000, cost: 160000, stock: 6, category: "whisky", image: "images/old parr.png" },
-  { id: 21, name: "Chivas Regal", price: 260000, cost: 175000, stock: 5, category: "whisky", image: "images/Chivas regal.png" },
-  { id: 22, name: "Jack Daniel's", price: 230000, cost: 150000, stock: 6, category: "whisky", image: "images/jack danniel.png" },
-  { id: 23, name: "Buchanan's Deluxe 12 A", price: 250000, cost: 165000, stock: 8, category: "whisky", image: "images/Buchanan´s Deluxe.webp" },
-  { id: 24, name: "Buchanan's Two Souls", price: 285000, cost: 195000, stock: 4, category: "whisky", image: "images/Buchanan´s Two sould.png" },
-  { id: 25, name: "Buchanan's Master", price: 280000, cost: 190000, stock: 5, category: "whisky", image: "images/Buchanan´s Master.webp" }
+  { id: 1, name: "Club Colombia", price: 6000, cost: 3500, stock: 24, category: "cervezas", image: "images/club-colombia.png" },
+  { id: 2, name: "Redd's", price: 6000, cost: 3500, stock: 18, category: "cervezas", image: "images/redds.png" },
+  { id: 3, name: "Coronita", price: 6000, cost: 3800, stock: 20, category: "cervezas", image: "images/coronita.png" },
+  { id: 4, name: "Corona", price: 10000, cost: 6500, stock: 15, category: "cervezas", image: "images/corona.png" },
+  { id: 5, name: "Michelada Soda Ginger", price: 9000, cost: 4000, stock: 30, category: "micheladas", image: "images/michelada-soda-ginger.png" },
+  { id: 6, name: "Michelada Coronita", price: 10000, cost: 5000, stock: 25, category: "micheladas", image: "images/michelada-coronita.png" },
+  { id: 7, name: "Michelada Club Colombia", price: 10000, cost: 5000, stock: 25, category: "micheladas", image: "images/michelada-club-colombia.png" },
+  { id: 8, name: "Michelada Redd's", price: 10000, cost: 5000, stock: 20, category: "micheladas", image: "images/michelada-redds.jpg" },
+  { id: 9, name: "Michelada Corona", price: 15000, cost: 8000, stock: 15, category: "micheladas", image: "images/michelada-corona.png" },
+  { id: 10, name: "Aguardiente Putumayo 1/2", price: 55000, cost: 32000, stock: 12, category: "licores", image: "images/aguardiente-putumayo-media.png" },
+  { id: 11, name: "Ron Viejo Caldas 1/2", price: 55000, cost: 32000, stock: 10, category: "licores", image: "images/ron-viejo-caldas-media.png" },
+  { id: 12, name: "Ron Caldas 8 Años 1/2", price: 90000, cost: 55000, stock: 8, category: "licores", image: "images/ron-caldas-8-anos.webp" },
+  { id: 13, name: "Tequila Olmeca 1/2", price: 90000, cost: 55000, stock: 6, category: "licores", image: "images/tequila-olmeca-media.jpg" },
+  { id: 14, name: "Aguardiente Putumayo", price: 100000, cost: 60000, stock: 14, category: "licores", image: "images/aguardiente-putumayo-botella.png" },
+  { id: 15, name: "Ron Viejo de Caldas", price: 100000, cost: 60000, stock: 12, category: "licores", image: "images/ron-viejo-caldas-media.png" },
+  { id: 16, name: "Ron Caldas 8 Años", price: 170000, cost: 110000, stock: 7, category: "licores", image: "images/ron-caldas-8-anos.webp" },
+  { id: 17, name: "Tequila Olmeca", price: 165000, cost: 105000, stock: 5, category: "licores", image: "images/tequila-olmeca-media.jpg" },
+  { id: 18, name: "Smirnoff Lulo", price: 100000, cost: 65000, stock: 9, category: "licores", image: "images/smirnoff-lulo.png" },
+  { id: 19, name: "Smirnoff Tamarindo", price: 100000, cost: 65000, stock: 8, category: "licores", image: "images/smirnoff-tamarindo.png" },
+  { id: 20, name: "Old Parr", price: 240000, cost: 160000, stock: 6, category: "whisky", image: "images/old-parr.png" },
+  { id: 21, name: "Chivas Regal", price: 260000, cost: 175000, stock: 5, category: "whisky", image: "images/chivas-regal.png" },
+  { id: 22, name: "Jack Daniel's", price: 230000, cost: 150000, stock: 6, category: "whisky", image: "images/jack-daniels.png" },
+  { id: 23, name: "Buchanan's Deluxe 12 A", price: 250000, cost: 165000, stock: 8, category: "whisky", image: "images/buchanans-deluxe.webp" },
+  { id: 24, name: "Buchanan's Two Souls", price: 285000, cost: 195000, stock: 4, category: "whisky", image: "images/buchanans-two-souls.png" },
+  { id: 25, name: "Buchanan's Master", price: 280000, cost: 190000, stock: 5, category: "whisky", image: "images/buchanans-master.webp" }
 ];
 
 const defaultDB = {
@@ -90,7 +90,7 @@ const defaultDB = {
   ventas_pendientes: [],
   productos: [...DEFAULT_PRODUCTS],
   inventario_historial: [],
-  movimientos: [], // Timeline unificado de auditoría
+  movimientos: [],
   live_caja_state: null,
   admin_pin: ADMIN_PIN || '1234'
 };
@@ -117,8 +117,48 @@ function loadDB() {
   }
 }
 
-// Servir directorio de imágenes con soporte de caché
-app.use('/images', express.static(path.join(__dirname, 'public', 'images')));
+// Servidor de imágenes inteligente (insensible a mayúsculas/minúsculas y tolerante a caracteres)
+const IMAGES_PUBLIC_DIR = path.join(__dirname, 'public', 'images');
+app.get(['/images/:file', '/images/*', '/api/images/:file'], (req, res) => {
+  try {
+    const rawParam = req.params.file || req.params[0] || '';
+    const cleanFilename = decodeURIComponent(rawParam).trim().replace(/^images\//, '');
+    const directPath = path.join(IMAGES_PUBLIC_DIR, cleanFilename);
+
+    if (fs.existsSync(directPath) && fs.statSync(directPath).isFile()) {
+      res.setHeader('Cache-Control', 'public, max-age=604800');
+      return res.sendFile(directPath);
+    }
+
+    if (fs.existsSync(IMAGES_PUBLIC_DIR)) {
+      const allFiles = fs.readdirSync(IMAGES_PUBLIC_DIR);
+      const searchKey = cleanFilename.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      let match = allFiles.find(f => f.toLowerCase() === cleanFilename.toLowerCase());
+      if (!match) {
+        match = allFiles.find(f => {
+          const fKey = f.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return fKey.includes(searchKey) || searchKey.includes(fKey);
+        });
+      }
+
+      if (match) {
+        res.setHeader('Cache-Control', 'public, max-age=604800');
+        return res.sendFile(path.join(IMAGES_PUBLIC_DIR, match));
+      }
+    }
+
+    const fallbackPath = path.join(IMAGES_PUBLIC_DIR, 'licor-default.png');
+    if (fs.existsSync(fallbackPath)) {
+      return res.sendFile(fallbackPath);
+    }
+    res.status(404).send('Not Found');
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
+app.use('/images', express.static(IMAGES_PUBLIC_DIR));
 
 let saveTimeout = null;
 function saveDB() {
