@@ -105,6 +105,8 @@ function loadDB() {
       db = { ...defaultDB, ...loaded };
       if (!Array.isArray(db.productos) || db.productos.length === 0) {
         db.productos = [...DEFAULT_PRODUCTS];
+      } else {
+        db.productos = db.productos.map(p => normalizeProduct(p));
       }
       console.log(`✅ Base de datos cargada: ${db.ventas.length} ventas, ${db.productos.length} productos.`);
     } else {
@@ -114,6 +116,9 @@ function loadDB() {
     console.error("⚠️ Error leyendo base de datos:", err);
   }
 }
+
+// Servir directorio de imágenes con soporte de caché
+app.use('/images', express.static(path.join(__dirname, 'public', 'images')));
 
 let saveTimeout = null;
 function saveDB() {
@@ -194,6 +199,62 @@ function parseStockNumber(val) {
   return Math.max(0, parseInt(clean, 10) || 0);
 }
 
+const IMAGE_NAME_MAP = {
+  "club colombia": "images/Club colombia.png",
+  "redd's": "images/Redd,s.png",
+  "redds": "images/Redd,s.png",
+  "coronita": "images/Coronita.png",
+  "corona": "images/Corona.png",
+  "michelada soda ginger": "images/Michelada soda ginger.png",
+  "michelada coronita": "images/michelada coronita.png",
+  "michelada club colombia": "images/Michelada club colombia.png",
+  "michelada redd's": "images/Micheladas Redd,s.jpg",
+  "michelada redds": "images/Micheladas Redd,s.jpg",
+  "michelada corona": "images/Michelada Corona.png",
+  "aguardiente putumayo 1/2": "images/Aguardiente media.png",
+  "aguardiente media": "images/Aguardiente media.png",
+  "ron viejo caldas 1/2": "images/Ron viejos de caldas media .png",
+  "ron viejo de caldas 1/2": "images/Ron viejos de caldas media .png",
+  "ron caldas 8 años 1/2": "images/Ron de caldas 8 años.webp",
+  "tequila olmeca 1/2": "images/Tequila olmeca media.ng.jpg",
+  "aguardiente putumayo": "images/Aguadiente Putumayo botello.png",
+  "ron viejo de caldas": "images/Ron viejos de caldas media .png",
+  "ron viejo caldas": "images/Ron viejos de caldas media .png",
+  "ron caldas 8 años": "images/Ron de caldas 8 años.webp",
+  "tequila olmeca": "images/Tequila olmeca media.ng.jpg",
+  "smirnoff lulo": "images/smirnoff vodka.png",
+  "smirnoff vodka": "images/smirnoff vodka.png",
+  "smirnoff tamarindo": "images/smirnoff Tamarindo.png",
+  "old parr": "images/old parr.png",
+  "chivas regal": "images/Chivas regal.png",
+  "jack daniel's": "images/jack danniel.png",
+  "jack daniels": "images/jack danniel.png",
+  "buchanan's deluxe": "images/Buchanan´s Deluxe.webp",
+  "buchanans deluxe": "images/Buchanan´s Deluxe.webp",
+  "buchanan's deluxe 12 a": "images/Buchanan´s Deluxe.webp",
+  "buchanan's two souls": "images/Buchanan´s Two sould.png",
+  "buchanans two souls": "images/Buchanan´s Two sould.png",
+  "buchanan's master": "images/Buchanan´s Master.webp",
+  "buchanans master": "images/Buchanan´s Master.webp"
+};
+
+function resolveProductImage(name, currentImage) {
+  if (currentImage && currentImage !== 'images/default_product.png' && !currentImage.includes('placeholder')) {
+    return currentImage;
+  }
+  const cleanName = String(name || '').toLowerCase().trim();
+  if (IMAGE_NAME_MAP[cleanName]) {
+    return IMAGE_NAME_MAP[cleanName];
+  }
+  // Búsqueda parcial
+  for (const [key, val] of Object.entries(IMAGE_NAME_MAP)) {
+    if (cleanName.includes(key) || key.includes(cleanName)) {
+      return val;
+    }
+  }
+  return currentImage || 'images/default_product.png';
+}
+
 function normalizeProduct(p) {
   if (!p) return null;
   const id = Number(p.id) || p.id;
@@ -202,7 +263,7 @@ function normalizeProduct(p) {
   const cost = parseMoneyNumber(p.cost !== undefined ? p.cost : p.costo);
   const stock = parseStockNumber(p.stock);
   const category = String(p.category || p.categoria || 'otros').toLowerCase().trim();
-  const image = p.image || p.imagen || 'images/default_product.png';
+  const image = resolveProductImage(name, p.image || p.imagen);
 
   return {
     id,
