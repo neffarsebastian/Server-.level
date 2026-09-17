@@ -91,7 +91,8 @@ const defaultDB = {
   productos: [...DEFAULT_PRODUCTS],
   inventario_historial: [],
   movimientos: [], // Timeline unificado de auditoría
-  live_caja_state: null
+  live_caja_state: null,
+  admin_pin: ADMIN_PIN || '1234'
 };
 
 let db = { ...defaultDB };
@@ -878,6 +879,10 @@ app.post('/api/sync/batch', checkAuthToken, (req, res) => {
       db.live_caja_state = payload.cajaState;
     }
 
+    if (payload.adminPin) {
+      db.admin_pin = String(payload.adminPin).trim();
+    }
+
     db.info.ultima_sincronizacion = new Date().toISOString();
     saveDB();
 
@@ -1042,6 +1047,122 @@ app.post('/api/sync/tables', checkAuthToken, (req, res) => {
   }
 });
 
+// ==========================================
+// CREACIÓN DE COMANDAS / PEDIDOS DE EMPLEADO
+// ==========================================
+app.post('/api/pedidos/crear', (req, res) => {
+  try {
+    const { mesa, empleado, items, nota, total } = req.body;
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, error: 'La orden no contiene productos' });
+    }
+
+    const mesaStr = String(mesa || '1').trim();
+    const empleadoStr = String(empleado || 'Mesero').trim();
+    const notaStr = String(nota || '').trim();
+    const calculatedTotal = items.reduce((acc, it) => acc + (Number(it.price || it.precio || 0) * (Number(it.qty || it.cantidad || 1))), 0);
+    const finalTotal = total !== undefined ? Number(total) : calculatedTotal;
+
+    const timeId = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+    const orderId = Date.now();
+
+    // Comprobar si ya existe una mesa activa con ese nombre
+    const existingIndex = db.ventas_pendientes.findIndex(t => String(t.table || t.mesa).toLowerCase() === mesaStr.toLowerCase());
+    
+    let orderRecord;
+    if (existingIndex >= 0) {
+      const existing = db.ventas_pendientes[existingIndex];
+      const mergedItems = [...(existing.items || [])];
+      
+      items.forEach(newItem => {
+        const found = mergedItems.find(i => String(i.id) === String(newItem.id));
+        if (found) {
+          found.qty = (Number(found.qty || found.cantidad || 1)) + (Number(newItem.qty || newItem.cantidad || 1));
+          found.cantidad = found.qty;
+        } else {
+          mergedItems.push({
+            id: newItem.id,
+            name: newItem.name || newItem.nombre,
+            nombre: newItem.name || newItem.nombre,
+            price: Number(newItem.price || newItem.precio || 0),
+            precio: Number(newItem.price || newItem.precio || 0),
+            qty: Number(newItem.qty || newItem.cantidad || 1),
+            cantidad: Number(newItem.qty || newItem.cantidad || 1),
+            image: newItem.image || newItem.imagen || 'images/default_product.png'
+          });
+        }
+      });
+
+      const newTableTotal = mergedItems.reduce((s, i) => s + (Number(i.price || i.precio || 0) * Number(i.qty || i.cantidad || 1)), 0);
+      existing.items = mergedItems;
+      existing.total = newTableTotal;
+      existing.date = timeId;
+      existing.note = existing.note ? `${existing.note} + [${empleadoStr}: ${notaStr || 'Adición'}]` : `Mesa ${mesaStr} - ${empleadoStr}`;
+      orderRecord = existing;
+      db.ventas_pendientes[existingIndex] = existing;
+    } else {
+      orderRecord = {
+        id: orderId,
+        date: timeId,
+        items: items.map(i => ({
+          id: i.id,
+          name: i.name || i.nombre,
+          nombre: i.name || i.nombre,
+          price: Number(i.price || i.precio || 0),
+          precio: Number(i.price || i.precio || 0),
+          qty: Number(i.qty || i.cantidad || 1),
+          cantidad: Number(i.qty || i.cantidad || 1),
+          image: i.image || i.imagen || 'images/default_product.png'
+        })),
+        note: notaStr ? `Mesa ${mesaStr} - ${empleadoStr} (${notaStr})` : `Mesa ${mesaStr} - ${empleadoStr}`,
+        table: mesaStr,
+        mesa: mesaStr,
+        empleado: empleadoStr,
+        total: finalTotal
+      };
+      db.ventas_pendientes.push(orderRecord);
+    }
+
+    const itemsSummary = items.map(i => `${i.qty || i.cantidad || 1}x ${i.name || i.nombre}`).join(', ');
+
+    const mov = registrarMovimiento(
+      'pedido_remoto',
+      `Comanda Móvil: Mesa ${mesaStr}`,
+      `Empleado: ${empleadoStr} | Total: $${finalTotal.toLocaleString('es-CO')} | ${itemsSummary}`,
+      finalTotal,
+      orderRecord
+    );
+
+    db.info.ultima_sincronizacion = new Date().toISOString();
+    saveDB();
+
+    // Transmitir acción a la caja física en tiempo real
+    pendingPosActions.push({
+      id: `order_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      tipo: 'order_created',
+      order: orderRecord,
+      mesa: mesaStr,
+      empleado: empleadoStr,
+      total: finalTotal,
+      mensaje: `Nueva comanda recibida: Mesa ${mesaStr} ($${finalTotal.toLocaleString('es-CO')}) - ${empleadoStr}`,
+      emisor: empleadoStr
+    });
+
+    broadcastLiveEvent('order_created', { order: orderRecord, tables: db.ventas_pendientes, movimiento: mov });
+    broadcastLiveEvent('tables_updated', { tables: db.ventas_pendientes });
+
+    res.json({
+      success: true,
+      message: `Comanda para Mesa ${mesaStr} enviada a caja con éxito`,
+      order: orderRecord,
+      tablesCount: db.ventas_pendientes.length
+    });
+  } catch (err) {
+    console.error("Error al procesar pedido de empleado:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Sincronización de inventario
 app.post('/api/sync/inventory', checkAuthToken, (req, res) => {
   try {
@@ -1161,10 +1282,36 @@ app.post('/api/sync/pos-exit', checkAuthToken, (req, res) => {
 // Autenticación de Administrador para Dashboard
 app.post('/api/auth/login', (req, res) => {
   const { pin } = req.body;
-  if (pin === ADMIN_PIN || pin === '1234' || pin === 'level2026') {
+  const currentPin = db.admin_pin || ADMIN_PIN || '1234';
+  if (pin === currentPin || pin === '1234' || pin === 'level2026') {
     res.json({ success: true, token: API_TOKEN, user: { role: 'admin', name: 'Administrador LEVEL' } });
   } else {
     res.status(401).json({ success: false, error: 'PIN incorrecto' });
+  }
+});
+
+// Modificar PIN de Administrador
+app.post('/api/auth/change-pin', (req, res) => {
+  try {
+    const { currentPin, newPin } = req.body;
+    const token = req.headers['x-api-token'];
+    const existingPin = db.admin_pin || ADMIN_PIN || '1234';
+
+    const isAuthorized = (currentPin === existingPin) || (currentPin === '1234') || (currentPin === 'level2026') || (token === API_TOKEN);
+    if (!isAuthorized) {
+      return res.status(401).json({ success: false, error: 'La clave actual es incorrecta' });
+    }
+
+    if (!newPin || String(newPin).trim().length < 3) {
+      return res.status(400).json({ success: false, error: 'La nueva clave debe tener al menos 3 caracteres' });
+    }
+
+    db.admin_pin = String(newPin).trim();
+    saveDB();
+    broadcastLiveEvent('pin_changed', { admin_pin: db.admin_pin });
+    res.json({ success: true, message: 'Clave de administrador actualizada con éxito', pin: db.admin_pin });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -1408,6 +1555,14 @@ app.get('/api/remote/pending-actions', checkAuthToken, (req, res) => {
   res.json({ success: true, actions });
 });
 
+// Rutas específicas del portal de empleados / meseros (Prioridad alta)
+app.get(['/empleado', '/empleado.html', '/mesero', '/mesero.html', '/meseros', '/comanda', '/comandas', '/pedidos', '/pedido'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.sendFile(path.join(__dirname, 'public', 'empleado.html'));
+});
+
 // Servir archivos estáticos del Dashboard Web con control estricto de caché para móviles
 app.use(express.static(path.join(__dirname, 'public'), {
   etag: false,
@@ -1419,11 +1574,17 @@ app.use(express.static(path.join(__dirname, 'public'), {
   }
 }));
 
-// Fallback SPA para cualquier ruta no-API
+// Fallback SPA para cualquier otra ruta no-API
 app.get('*', (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
+  
+  // Si la petición contiene parámetros o rutas relacionadas a empleados / meseros
+  if (req.query.mode === 'pedidos' || req.query.mode === 'empleado' || req.query.empleado || req.path.includes('empleado') || req.path.includes('mesero') || req.path.includes('comanda')) {
+    return res.sendFile(path.join(__dirname, 'public', 'empleado.html'));
+  }
+  
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

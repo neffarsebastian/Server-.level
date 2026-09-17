@@ -334,6 +334,7 @@ function initDashboard() {
   const urlDisplay = document.getElementById('serverUrlDisplay');
   if (urlDisplay) urlDisplay.value = curOrigin;
   
+  // Generar Códigos QR en vista de ajustes
   const qrImg = document.getElementById('qrCodeImage');
   if (qrImg) {
     qrImg.onerror = function() {
@@ -341,6 +342,16 @@ function initDashboard() {
       this.src = `https://quickchart.io/qr?text=${encodeURIComponent(curOrigin)}&size=180`;
     };
     qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=4&data=${encodeURIComponent(curOrigin)}`;
+  }
+
+  const qrEmpImg = document.getElementById('qrCodeEmpleadoImage');
+  if (qrEmpImg) {
+    const empUrl = `${curOrigin}/empleado.html?mode=pedidos`;
+    qrEmpImg.onerror = function() {
+      this.onerror = null;
+      this.src = `https://quickchart.io/qr?text=${encodeURIComponent(empUrl)}&size=180`;
+    };
+    qrEmpImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=4&data=${encodeURIComponent(empUrl)}`;
   }
 
   // Polling de respaldo de alta velocidad (cada 3.5 segundos)
@@ -1699,6 +1710,54 @@ function finishIntroAnimation() {
       const login = document.getElementById('loginScreen');
       if (login) login.classList.remove('hidden');
     }
+  }
+}
+
+async function changeAdminPinWeb() {
+  const curEl = document.getElementById('webChangePinCurrent');
+  const newEl = document.getElementById('webChangePinNew');
+  const confEl = document.getElementById('webChangePinConfirm');
+  const statusEl = document.getElementById('webChangePinStatus');
+
+  const currentPin = (curEl ? curEl.value : '').trim();
+  const newPin = (newEl ? newEl.value : '').trim();
+  const confirmPin = (confEl ? confEl.value : '').trim();
+
+  if (!currentPin) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-danger);"><i class="fa-solid fa-triangle-exclamation"></i> Ingresa la clave actual.</span>';
+    return;
+  }
+  if (!newPin || newPin.length < 3) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-danger);"><i class="fa-solid fa-triangle-exclamation"></i> La nueva clave debe tener al menos 3 dígitos.</span>';
+    return;
+  }
+  if (newPin !== confirmPin) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-danger);"><i class="fa-solid fa-triangle-exclamation"></i> Las claves nuevas no coinciden.</span>';
+    return;
+  }
+
+  try {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-primary);"><i class="fa-solid fa-spinner fa-spin"></i> Actualizando clave...</span>';
+    const res = await fetch('/api/auth/change-pin', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-token': authToken || 'level-secret-token-2026'
+      },
+      body: JSON.stringify({ currentPin, newPin })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      if (statusEl) statusEl.innerHTML = `<span style="color:var(--accent-success);"><i class="fa-solid fa-circle-check"></i> ${data.message || 'Clave actualizada exitosamente'}</span>`;
+      if (curEl) curEl.value = '';
+      if (newEl) newEl.value = '';
+      if (confEl) confEl.value = '';
+    } else {
+      if (statusEl) statusEl.innerHTML = `<span style="color:var(--accent-danger);"><i class="fa-solid fa-triangle-exclamation"></i> ${data.error || 'Error actualizando clave'}</span>`;
+    }
+  } catch (err) {
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--accent-danger);"><i class="fa-solid fa-triangle-exclamation"></i> Error de conexión: ${err.message}</span>`;
   }
 }
 
